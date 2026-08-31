@@ -20,6 +20,9 @@
   #status { margin-top:12px; white-space:pre-wrap; padding:10px; border-radius:8px; background:#8881; }
   details { margin-top:16px; }
   pre { white-space:pre-wrap; font-size:12px; padding:10px; border-radius:8px; background:#8881; overflow:auto; }
+  .keyrow { margin-top:6px; font-size:13px; }
+  .checklabel { font-weight:normal; display:inline-flex; align-items:center; gap:6px; cursor:pointer; }
+  .checklabel input { width:auto; }
 </style>
 </head>
 <body>
@@ -28,6 +31,11 @@
 
 <label for="key">Gemini API-Key</label>
 <input id="key" type="password" autocomplete="off" placeholder="AIza…">
+<div class="keyrow">
+  <label class="checklabel">
+    <input type="checkbox" id="saveKey" checked> API-Key auf diesem Gerät speichern
+  </label>
+</div>
 
 <label for="prompt">Kompositionsauftrag</label>
 <textarea id="prompt">Komponiere ein 24-taktiges Stück für Klavier solo.</textarea>
@@ -54,6 +62,7 @@
 
 const MODEL = 'gemini-3.7-flash';
 const PPQ = 480;
+const KEY_STORAGE_ID = 'gemini_midi_lab_api_key';
 let currentMidi = null;
 let currentTitle = 'composition';
 
@@ -110,6 +119,27 @@ Regeln des DATEIFORMATS, nicht der Komposition:
 document.getElementById('contract').textContent = technicalContract.trim();
 const $ = id => document.getElementById(id);
 const status = msg => $('status').textContent = msg;
+
+// --- Key Persistence ---
+try {
+  const saved = localStorage.getItem(KEY_STORAGE_ID);
+  if (saved) $('key').value = saved;
+} catch(_) {}
+
+$('key').addEventListener('input', () => {
+  if ($('saveKey').checked) {
+    try { localStorage.setItem(KEY_STORAGE_ID, $('key').value.trim()); } catch(_) {}
+  }
+});
+
+$('saveKey').addEventListener('change', () => {
+  if ($('saveKey').checked) {
+    try { localStorage.setItem(KEY_STORAGE_ID, $('key').value.trim()); } catch(_) {}
+  } else {
+    try { localStorage.removeItem(KEY_STORAGE_ID); } catch(_) {}
+  }
+});
+// -----------------------
 
 $('compose').addEventListener('click', compose);
 $('fromRaw').addEventListener('click', () => {
@@ -179,192 +209,5 @@ async function compose() {
 }
 
 function parseScore(raw) {
-  const text = raw.replace(/^```[^\n]*\n?/i,'').replace(/```\s*$/,'').trim();
-  const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-  const score = { title:'Composition', bars:null, tempo:90, meterNum:4, meterDen:4, key:'', tracks:[] };
-  let track = null;
+  const text = raw.replace(/^```[^\n]*\n?/i,'').replace(/
 
-  for (const line of lines) {
-    let m;
-    if ((m = line.match(/^TITLE\s*:\s*(.+)$/i))) { score.title = m[1].trim(); continue; }
-    if ((m = line.match(/^BARS\s*:\s*(\d+)$/i))) { score.bars = clamp(+m[1],1,1000); continue; }
-    if ((m = line.match(/^TEMPO\s*:\s*(\d+)/i))) { score.tempo = clamp(+m[1],20,300); continue; }
-    if ((m = line.match(/^METER\s*:\s*(\d+)\s*\/\s*(\d+)/i))) { score.meterNum=+m[1]; score.meterDen=+m[2]; continue; }
-    if ((m = line.match(/^KEY\s*:\s*(.+)$/i))) { score.key=m[1].trim(); continue; }
-    if ((m = line.match(/^\[(.+?)\s*\|\s*GM\s*=\s*(\d{1,3})\]$/i))) {
-      const name = m[1].trim();
-      const program = +m[2];
-      if (program < 0 || program > 127) throw new Error(`Ungueltige GM-Programmnummer fuer ${name}: ${program}`);
-      track = {name, program, bars:[]};
-      score.tracks.push(track);
-      continue;
-    }
-    if (track && (m = line.match(/^(\d+)\s*\|\s*(.*)$/))) {
-      track.bars.push({bar:+m[1], tokens:tokenizeBar(m[2].trim())});
-    }
-  }
-
-  if (!score.tracks.length) throw new Error('Keine Instrumentenspuren gefunden. Erwartet wird z.B. [Piano|GM=0].');
-  for (const t of score.tracks) t.bars.sort((a,b)=>a.bar-b.bar);
-  if (!score.bars) score.bars = Math.max(...score.tracks.flatMap(t => t.bars.map(b => b.bar)),0);
-  if (!score.bars) throw new Error('Keine Takte gefunden.');
-  return score;
-}
-
-function tokenizeBar(s) {
-  if (!s) return [];
-  const tokens = s.match(/\[[^\]]+\]:[^\s]+|[^\s]+/g) || [];
-  return tokens.map(parseToken);
-}
-
-function parseToken(tok) {
-  if (/^PEDAL_ON$/i.test(tok)) return {type:'pedal', value:127, dur:0};
-  if (/^PEDAL_OFF$/i.test(tok)) return {type:'pedal', value:0, dur:0};
-  const m = tok.match(/^(R|\[[^\]]+\]|[A-Ga-g][#b]?-?\d+)\s*:\s*([0-9.]+)(?:@([0-9]+))?$/);
-  if (!m) throw new Error(`Unverstaendliches Notentoken: ${tok}`);
-  const pitchPart=m[1], dur=+m[2], vel=m[3]?clamp(+m[3],1,127):null;
-  if (!(dur>0)) throw new Error(`Ungueltige Dauer: ${tok}`);
-  if (pitchPart==='R') return {type:'note',rest:true,dur,vel};
-  const pitches=pitchPart.startsWith('[') ? pitchPart.slice(1,-1).split(',').map(x=>x.trim()).filter(Boolean) : [pitchPart];
-  return {type:'note',rest:false,pitches,dur,vel};
-}
-
-function validateScore(score) {
-  if (![1,2,4,8,16].includes(score.meterDen)) throw new Error(`Nicht unterstuetzter Taktnenner: ${score.meterDen}`);
-  const beatsPerBar=score.meterNum*(4/score.meterDen);
-  const report=[`Titel: ${score.title}`,`Takte: ${score.bars}`,`Tempo: ${score.tempo} BPM`,`Taktart: ${score.meterNum}/${score.meterDen}`,`Tonart/Modus: ${score.key||'nicht angegeben'}`,`Spuren: ${score.tracks.length}`];
-  for (const t of score.tracks) {
-    const nums=new Set(t.bars.map(b=>b.bar));
-    const missing=[], duplicate=[];
-    const counts={};
-    for (const b of t.bars) counts[b.bar]=(counts[b.bar]||0)+1;
-    for (let i=1;i<=score.bars;i++) { if(!nums.has(i)) missing.push(i); if((counts[i]||0)>1) duplicate.push(i); }
-    const problems=[];
-    for (const b of t.bars) {
-      const sum=b.tokens.reduce((a,x)=>a+(x.type==='pedal'?0:x.dur),0);
-      if (Math.abs(sum-beatsPerBar)>0.0001) problems.push(`T${b.bar}=${trimNum(sum)}`);
-    }
-    const velocities=t.bars.flatMap(b=>b.tokens).filter(x=>x.type!=='pedal' && !x.rest && x.vel!=null).map(x=>x.vel);
-    const pedalEvents=t.bars.flatMap(b=>b.tokens).filter(x=>x.type==='pedal').length;
-    let line=`${t.name} (GM ${t.program}): ${t.bars.length} Takte`;
-    if(velocities.length) line+=`; Velocity ${Math.min(...velocities)}–${Math.max(...velocities)} (${new Set(velocities).size} Werte)`;
-    else line+=`; keine explizite Velocity`;
-    if(pedalEvents) line+=`; ${pedalEvents} Pedal-Ereignisse`;
-    if(missing.length) line+=`; fehlen: ${missing.join(',')}`;
-    if(duplicate.length) line+=`; doppelt: ${duplicate.join(',')}`;
-    if(problems.length) line+=`; abweichende Taktlaengen: ${problems.join(', ')}`;
-    let pedalOn=false, pedalBalanceProblem=false;
-    for(const b of t.bars) for(const x of b.tokens) if(x.type==='pedal') {
-      if(x.value>=64) pedalOn=true; else pedalOn=false;
-    }
-    if(pedalOn) { line+=`; WARNUNG: Pedal am Ende noch ON`; pedalBalanceProblem=true; }
-    report.push(line);
-  }
-  return report;
-}
-
-function buildMidi(score) {
-  validateScore(score);
-  const chunks=[];
-  chunks.push(strBytes('MThd'),u32(6),u16(1),u16(score.tracks.length+1),u16(PPQ));
-  chunks.push(makeMetaTrack(score));
-  const channels=availableChannels(score.tracks.length);
-  score.tracks.forEach((t,i)=>chunks.push(makeNoteTrack(score,t,channels[i],defaultVelocityForProgram(t.program))));
-  return concatBytes(chunks);
-}
-
-function availableChannels(n) {
-  const out=[];
-  for(let ch=0;ch<16 && out.length<n;ch++) if(ch!==9) out.push(ch);
-  if(n>out.length) throw new Error('Mehr als 15 melodische MIDI-Spuren werden in diesem Labor nicht unterstuetzt.');
-  return out;
-}
-
-function defaultVelocityForProgram(program) {
-  if(program<=7) return 78;       // piano
-  if(program>=24 && program<=31) return 72; // guitar
-  if(program>=32 && program<=39) return 76; // bass
-  if(program>=40 && program<=51) return 78; // strings
-  if(program>=72 && program<=79) return 82; // winds
-  return 78;
-}
-
-function makeMetaTrack(score) {
-  const ev=[];
-  ev.push({tick:0,order:0,bytes:metaText(0x03,score.title)});
-  const mpqn=Math.round(60000000/score.tempo);
-  ev.push({tick:0,order:0,bytes:[0xFF,0x51,0x03,(mpqn>>16)&255,(mpqn>>8)&255,mpqn&255]});
-  const denPow=Math.round(Math.log2(score.meterDen));
-  ev.push({tick:0,order:0,bytes:[0xFF,0x58,0x04,score.meterNum&255,denPow&255,24,8]});
-  if(score.key) ev.push({tick:0,order:0,bytes:metaText(0x01,'KEY: '+score.key)});
-  return trackChunk(eventsToTrack(ev));
-}
-
-function makeNoteTrack(score,track,channel,defaultVel) {
-  if(!track.bars.length) throw new Error(`Spur [${track.name}] ist leer.`);
-  const ev=[];
-  ev.push({tick:0,order:0,bytes:metaText(0x03,track.name)});
-  ev.push({tick:0,order:1,bytes:[0xC0|channel,track.program]});
-  const beatsPerBar=score.meterNum*(4/score.meterDen);
-  for(const bar of track.bars) {
-    let beat=0;
-    const barStart=(bar.bar-1)*beatsPerBar;
-    for(const token of bar.tokens) {
-      const startTick=Math.round((barStart+beat)*PPQ);
-      if(token.type==='pedal') {
-        ev.push({tick:startTick,order:2,bytes:[0xB0|channel,64,token.value]});
-        continue;
-      }
-      const endTick=Math.round((barStart+beat+token.dur)*PPQ);
-      if(!token.rest) {
-        for(const p of token.pitches) {
-          const note=noteNumber(p), vel=token.vel??defaultVel;
-          ev.push({tick:startTick,order:3,bytes:[0x90|channel,note,vel]});
-          ev.push({tick:endTick,order:1,bytes:[0x80|channel,note,0]});
-        }
-      }
-      beat+=token.dur;
-    }
-  }
-  const scoreEndTick=Math.round(score.bars*beatsPerBar*PPQ);
-  ev.push({tick:scoreEndTick,order:4,bytes:[0xB0|channel,64,0]});
-  return trackChunk(eventsToTrack(ev));
-}
-
-function noteNumber(name) {
-  const m=name.match(/^([A-Ga-g])([#b]?)(-?\d+)$/);
-  if(!m) throw new Error(`Ungueltige Tonhoehe: ${name}`);
-  const base={C:0,D:2,E:4,F:5,G:7,A:9,B:11}[m[1].toUpperCase()];
-  const accidental=m[2]==='#'?1:m[2]==='b'?-1:0;
-  const octave=+m[3];
-  const n=(octave+1)*12+base+accidental;
-  if(n<0||n>127) throw new Error(`Ton ausserhalb MIDI-Bereich: ${name}`);
-  return n;
-}
-
-function eventsToTrack(events) {
-  events.sort((a,b)=>a.tick-b.tick||a.order-b.order);
-  const out=[]; let prev=0;
-  for(const e of events) { out.push(...varLen(e.tick-prev),...e.bytes); prev=e.tick; }
-  out.push(0x00,0xFF,0x2F,0x00);
-  return out;
-}
-function trackChunk(bytes){ return concatBytes([strBytes('MTrk'),u32(bytes.length),bytes]); }
-function metaText(type,text){ const b=Array.from(new TextEncoder().encode(text)); return [0xFF,type,...varLen(b.length),...b]; }
-function varLen(v){ v=Math.max(0,Math.floor(v)); let buffer=v&0x7F; const out=[]; while((v>>=7)){buffer<<=8;buffer|=((v&0x7F)|0x80);} while(true){out.push(buffer&0xFF);if(buffer&0x80)buffer>>=8;else break;} return out; }
-function u16(n){return[(n>>8)&255,n&255];}
-function u32(n){return[(n>>>24)&255,(n>>>16)&255,(n>>>8)&255,n&255];}
-function strBytes(s){return Array.from(s).map(c=>c.charCodeAt(0));}
-function concatBytes(parts){const arrays=parts.map(p=>p instanceof Uint8Array?p:Uint8Array.from(p));const len=arrays.reduce((n,a)=>n+a.length,0);const out=new Uint8Array(len);let pos=0;for(const a of arrays){out.set(a,pos);pos+=a.length;}return out;}
-function clamp(x,a,b){return Math.max(a,Math.min(b,x));}
-function trimNum(n){return Number(n.toFixed(4)).toString();}
-function safeName(s){return(s||'composition').replace(/[^a-z0-9_-]+/gi,'_').replace(/^_+|_+$/g,'').slice(0,80)||'composition';}
-function downloadBlob(blob,filename){
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url;a.download=filename;a.style.display='none';document.body.appendChild(a);a.click();
-  setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},1500);
-}
-</script>
-</body>
-</html>
