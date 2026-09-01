@@ -1,420 +1,668 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Gemini 3.7 Flash – MIDI Lab v4</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI MIDI Composer – Universal Studio</title>
 <style>
-  :root { color-scheme: light dark; }
-  body { font-family: system-ui,-apple-system,sans-serif; max-width:1000px; margin:28px auto; padding:0 18px; line-height:1.4; }
-  h1 { font-size:22px; margin-bottom:4px; }
-  .sub { opacity:.76; margin-top:0; }
-  label { display:block; font-weight:650; margin:16px 0 6px; }
-  input,textarea,button { font:inherit; }
-  input,textarea { width:100%; box-sizing:border-box; padding:10px; border:1px solid #8888; border-radius:8px; }
-  textarea { min-height:110px; resize:vertical; }
-  #raw { min-height:360px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
-  .row { display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; }
-  button { padding:10px 15px; border-radius:8px; border:1px solid #8888; cursor:pointer; }
-  button:disabled { opacity:.45; cursor:not-allowed; }
-  #status { margin-top:12px; white-space:pre-wrap; padding:10px; border-radius:8px; background:#8881; }
-  details { margin-top:16px; }
-  pre { white-space:pre-wrap; font-size:12px; padding:10px; border-radius:8px; background:#8881; overflow:auto; }
-  .keyrow { margin-top:6px; font-size:13px; }
-  .checklabel { font-weight:normal; display:inline-flex; align-items:center; gap:6px; cursor:pointer; }
+  :root { --bg:#111318; --panel:#1a1f27; --panel2:#232a34; --text:#eef2f7; --muted:#9ba7b4; --accent:#7cc4ff; --ok:#74d99f; --warn:#ffd166; --err:#ff7b7b; --line:#303845; }
+  * { box-sizing:border-box; }
+  html { min-height:100%; overflow-y:auto; }
+  body { margin:0; min-height:100%; overflow-y:auto; background:var(--bg); color:var(--text); font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif; }
+  header { padding:14px 18px; background:#0d0f13; border-bottom:1px solid #2b323d; position:sticky; top:0; z-index:2; }
+  header h1 { margin:0; font-size:18px; }
+  main { display:grid; grid-template-columns:minmax(320px,460px) 1fr; gap:14px; padding:14px; min-height:calc(100vh - 55px); height:auto; align-items:start; }
+  .panel { background:var(--panel); border:1px solid #2d3540; border-radius:10px; padding:14px; overflow:visible; min-height:0; }
+  label { display:block; margin:10px 0 5px; color:#cbd4df; font-weight:600; }
+  input, select, textarea, button { font:inherit; }
+  input, select, textarea { width:100%; padding:9px; border-radius:7px; border:1px solid #3a4553; background:#10141a; color:var(--text); }
+  textarea { resize:vertical; min-height:110px; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  button { border:0; border-radius:7px; padding:10px 14px; cursor:pointer; font-weight:700; }
+  .primary { background:var(--accent); color:#07121a; width:100%; margin-top:12px; }
+  .secondary { background:#303947; color:var(--text); }
+  .toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+  pre { white-space:pre-wrap; word-break:break-word; background:#0f1318; padding:12px; border-radius:8px; border:1px solid #303845; min-height:160px; }
+  .status { padding:8px 10px; border-radius:7px; background:#10141a; border:1px solid #303845; margin-bottom:10px; }
+  .ok { color:var(--ok); } .warn { color:var(--warn); } .err { color:var(--err); }
+  details { margin-top:10px; }
+  summary { cursor:pointer; color:#cbd4df; }
+  small { color:var(--muted); }
+
+  .keyrow { display:flex; gap:8px; align-items:center; margin-top:7px; flex-wrap:wrap; }
+  .checklabel { margin:0; font-weight:400; display:flex; gap:7px; align-items:center; flex:1 1 220px; }
   .checklabel input { width:auto; }
+  .smallbtn { padding:7px 10px; font-size:12px; }
+  .uploadrow { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:4px; }
+  .uploadrow input[type=file] { flex:1 1 240px; padding:7px; }
+  .uploadinfo { margin-top:6px; color:var(--muted); font-size:12px; }
+  .resultcard { border:1px solid var(--line); border-radius:8px; padding:10px; background:var(--panel2); color:var(--text); line-height:1.45; }
+  .foldbox { margin-top:12px; padding:0; border:1px solid var(--line); border-radius:9px; background:var(--panel2); overflow:hidden; }
+  .foldbox > summary { padding:11px 13px; font-weight:700; color:var(--text); background:#1b222c; }
+  .foldcontent { padding:12px; }
+  .foldbox[open] > summary { border-bottom:1px solid var(--line); }
+  .chatlog { max-height:260px; overflow:auto; display:flex; flex-direction:column; gap:8px; margin:8px 0 10px; }
+  .chatmsg { padding:8px 10px; border-radius:8px; white-space:pre-wrap; line-height:1.35; font-size:13px; }
+  .chatuser { background:#263241; align-self:flex-end; max-width:90%; }
+  .chatai { background:#151c24; border:1px solid #2d3846; align-self:flex-start; max-width:90%; color:var(--text); }
+  .chatrow { display:flex; gap:8px; align-items:flex-end; }
+  .chatrow textarea { flex:1; min-height:60px; }
+  .historyitem { border:1px solid var(--line); border-radius:8px; padding:9px; background:var(--panel2); color:var(--text); margin-bottom:8px; }
+  .historymeta { color:var(--muted); font-size:12px; margin-top:3px; }
+  .costmeta { color:#cbd4df; font-size:12px; margin-top:5px; }
+  .historyactions { display:flex; gap:6px; flex-wrap:wrap; margin-top:7px; }
+  @media (max-width:900px){ main{grid-template-columns:1fr;} }
 </style>
 </head>
 <body>
-<h1>Gemini 3.7 Flash – MIDI Lab v4</h1>
-<p class="sub">Freie Besetzung und musikalischer Ausdruck: Der Benutzerauftrag bestimmt die Komposition. Gemini kann Velocity und – wo musikalisch sinnvoll – Sustain-Pedal mitkomponieren. Das HTML übersetzt nur die fertige Notenschrift in MIDI.</p>
+<header><h1>AI MIDI Composer – Universal Studio</h1></header>
+<main>
+  <section class="panel">
+    <label>Modell-Anbieter</label>
+    <select id="provider">
+      <option value="gemini" selected>Google / Gemini (3.7 Flash)</option>
+      <option value="anthropic">Anthropic / Claude (Sonnet 5)</option>
+      <option value="openai">OpenAI (Sol / GPT-5.6)</option>
+    </select>
 
-<label for="key">Gemini API-Key</label>
-<input id="key" type="password" autocomplete="off" placeholder="AIza…">
-<div class="keyrow">
-  <label class="checklabel">
-    <input type="checkbox" id="saveKey" checked> API-Key auf diesem Gerät speichern
-  </label>
-</div>
+    <label>Modellname</label>
+    <input id="model" value="gemini-3.7-flash">
 
-<label for="prompt">Kompositionsauftrag</label>
-<textarea id="prompt">Komponiere ein 24-taktiges Stück für Klavier solo.</textarea>
+    <label>API-Key für gewählten Anbieter</label>
+    <div style="display:flex; gap:6px;">
+      <input id="apiKey" type="password" placeholder="API-Key eintragen">
+      <button type="button" id="toggleKeyBtn" class="secondary smallbtn" style="flex:0 0 auto;">👁</button>
+    </div>
+    <div class="keyrow">
+      <label class="checklabel"><input id="rememberApiKey" type="checkbox" checked> Key lokal auf diesem Gerät merken</label>
+      <button type="button" class="secondary smallbtn" id="saveKeyBtn">💾 Speichern</button>
+      <button type="button" class="secondary smallbtn" id="clearApiKeyBtn">🗑 Löschen</button>
+    </div>
 
-<div class="row">
-  <button id="compose">Mit Gemini 3.7 Flash komponieren</button>
-  <button id="midi" disabled>MIDI herunterladen</button>
-  <button id="fromRaw">Rohantwort → MIDI</button>
-  <button id="rawDownload" disabled>Rohantwort herunterladen</button>
-</div>
+    <div class="row">
+      <div>
+        <label>Takte</label>
+        <input id="measures" type="number" min="1" max="256" value="32">
+      </div>
+      <div>
+        <label>Taktart</label>
+        <input id="meter" value="4/4">
+      </div>
+    </div>
 
-<div id="status">Bereit.</div>
+    <div class="row">
+      <div>
+        <label>Tempo (BPM)</label>
+        <input id="tempo" type="number" min="20" max="300" value="96">
+      </div>
+      <div>
+        <label>Tonart</label>
+        <input id="key" value="e minor">
+      </div>
+    </div>
 
-<label for="raw">Rohe Modellantwort</label>
-<textarea id="raw" spellcheck="false" placeholder="Hier erscheint die unveränderte Antwort von Gemini."></textarea>
+    <label>Besetzung</label>
+    <input id="ensemble" value="Piano solo">
 
-<details>
-  <summary>Technischer Ausgabeauftrag</summary>
-  <pre id="contract"></pre>
-</details>
+    <label>Kompositionsauftrag</label>
+    <textarea id="prompt">Komponiere ein eigenständiges, musikalisch überzeugendes Stück. Entwickle einen klar erkennbaren musikalischen Gedanken mit abwechslungsreicher Dynamik und Artikulation.</textarea>
+
+    <label>Vorhandenes Material hochladen (MIDI oder JSON)</label>
+    <div class="uploadrow">
+      <input id="uploadInput" type="file" accept=".mid,.midi,.json,application/json,audio/midi">
+      <button type="button" class="secondary smallbtn" id="clearUploadBtn">Entfernen</button>
+    </div>
+    <div class="uploadinfo" id="uploadInfo">Kein Material geladen.</div>
+
+    <button class="primary" id="composeBtn">Mit gewählter KI komponieren</button>
+  </section>
+
+  <section class="panel">
+    <div class="toolbar">
+      <button class="secondary" id="downloadBtn" disabled>MIDI herunterladen</button>
+      <button class="secondary" id="jsonBtn" disabled>JSON herunterladen</button>
+    </div>
+    <div class="status" id="status">Bereit.</div>
+
+    <details class="foldbox" id="conceptSection" open>
+      <summary>Musikalischer Impuls</summary>
+      <div class="foldcontent">
+        <div id="conceptView" class="resultcard">Noch kein Entwurf.</div>
+      </div>
+    </details>
+
+    <h3>Aktuelle Komposition</h3>
+    <div id="lastResult" class="resultcard">Noch keine Komposition.</div>
+
+    <details class="foldbox" id="chatSection" open>
+      <summary>Mit der KI chatten & weiterbearbeiten</summary>
+      <div class="foldcontent">
+        <div id="chatContext" class="historyitem">Keine Komposition aktiv.</div>
+        <div id="chatLog" class="chatlog"><div class="chatai chatmsg">Stelle hier Fragen zum Stück oder gib Anweisungen wie z.B. „Mache Takt 5 bis 8 dramatischer“ oder „Verlängere um 8 Takte“.</div></div>
+        <div class="chatrow">
+          <textarea id="chatInput" placeholder="Frage oder Änderungswunsch eingeben …"></textarea>
+          <button id="chatSendBtn" class="secondary" type="button">Senden</button>
+        </div>
+      </div>
+    </details>
+
+    <details class="foldbox" id="validationSection">
+      <summary>Technische Analyse & Validierung</summary>
+      <div class="foldcontent">
+        <pre id="validation">Noch keine Komposition geprüft.</pre>
+      </div>
+    </details>
+
+    <details class="foldbox" id="historySection">
+      <summary>Verlauf</summary>
+      <div class="foldcontent">
+        <div class="toolbar" style="margin-top:0">
+          <button type="button" class="secondary smallbtn" id="clearHistoryBtn">Verlauf leeren</button>
+        </div>
+        <div id="historyList">Noch kein Verlauf.</div>
+      </div>
+    </details>
+  </section>
+</main>
 
 <script>
 'use strict';
 
-const MODEL = 'gemini-3.7-flash';
-const PPQ = 480;
-const KEY_STORAGE_ID = 'gemini_midi_lab_api_key';
-let currentMidi = null;
-let currentTitle = 'composition';
+const STORAGE_ID = "ai_midi_composer_settings_v30";
+const HISTORY_ID = "ai_midi_composer_history_v30";
 
-const technicalContract = `
-TECHNISCHE AUSGABEANFORDERUNG – keine musikalischen Zusatzregeln:
+const DEFAULT_MODELS = {
+  gemini: "gemini-3.7-flash",
+  anthropic: "claude-sonnet-5",
+  openai: "gpt-5.6-sol"
+};
 
-Erfülle den Benutzerauftrag musikalisch genau so, wie er gestellt wurde. Insbesondere:
-- Verwende genau die gewünschte Besetzung. Ersetze oder ergänze keine Instrumente eigenmächtig.
-- Halte eine verlangte Taktzahl exakt ein.
-- Halte ausdrücklich verlangte Stil-, Taktart-, Tempo-, Tonart- oder Formangaben ein.
-- Was der Benutzer NICHT festgelegt hat, entscheidest du musikalisch selbst.
+const TOKEN_RATES = {
+  "claude-sonnet-5": {in:2.00, out:10.00},
+  "gemini-3.7-flash": {in:0.75, out:3.75},
+  "gpt-5.6-sol": {in:4.00, out:20.00}
+};
 
-Gib die fertige Komposition ausschließlich in dieser einfachen Notenschrift aus:
+const SYSTEM_PREFIX = `Du bist ein Kompositions- und Produktionsassistent für MIDI.
+Erfinde selbständige, geschlossene Musik nach dem Auftrag des Nutzers. Achte auf Stimmführung, Dynamik (Velocity 1-127), Rhythmik und Artikulation.`;
 
-TITLE: frei gewählter Titel
-BARS: Zahl der Takte der Komposition
-TEMPO: ganze Zahl in BPM
-METER: Zaehler/Nenner, z.B. 4/4, 3/4 oder 3/2
-KEY: freie Textangabe
+const TECHNICAL_PROMPT = `NOTATION UND AUSGABE:
+- "d" = Notierter Wert in Viertelnoten-Beats (0.125, 0.25, 0.333333, 0.5, 0.666667, 0.75, 1, 1.5, 2, 3, 4, 6, 8).
+- "g" = Gate/Klingdauer als Faktor (z.B. 0.95 = normal, 0.5 = staccato, 1.05 = legato).
+- "st" = System (0=Standard, 1=Rechte Hand / oberes System, 2=Linke Hand / unteres System).
+- Format: JSON mit Array-Struktur:
+{
+  "ti": "Titel",
+  "bpm": 96,
+  "ts": {"n": 4, "d": 4},
+  "k": "e minor",
+  "sm": "Kurze Zusammenfassung",
+  "tr": [
+    {
+      "nm": "Piano",
+      "ch": 0,
+      "pg": 0,
+      "nt": [[0.0, 1.0, 60, 80, 1]],
+      "ct": [[0.0, 64, 0]]
+    }
+  ]
+}
+nt-Array: [StartBeat, Dauer, Pitch, Velocity, Staff, Gate] (Gate ist optional, Standard 0.95).
+ct-Array: [Beat, CC, Wert].
+Gib ausschließlich reines JSON ohne Markdown-Codeblöcke aus.`;
 
-Danach folgen genau die Instrumente/Stimmen, die der Benutzer verlangt hat. Jede Spur hat einen frei lesbaren Namen und eine General-MIDI-Programmnummer (0 bis 127):
+let lastScore = null;
+let lastMidiBytes = null;
+let lastProvider = null;
+let lastModel = null;
+let uploadedScore = null;
+let uploadedName = "";
+let conversationHistory = [];
 
-[Piano|GM=0]
-1 | D4:1 F4:1 A4:2
-2 | [D3,A3]:2 [F3,C4]:2
-...
-
-oder bei einem Ensemble zum Beispiel:
-
-[Flute|GM=73]
-1 | D5:1 E5:1 F5:1 G5:1
-...
-[Violin|GM=40]
-1 | ...
-...
-
-Regeln des DATEIFORMATS, nicht der Komposition:
-- Die Zahl der Spurabschnitte ist frei und folgt ausschließlich der vom Benutzer gewünschten Besetzung.
-- Bei Solo-Instrument ist genau eine Instrumentenspur auszugeben.
-- Spurkopf exakt: [Name|GM=n], wobei n eine General-MIDI-Programmnummer von 0 bis 127 ist.
-- Jede Spur enthaelt jeden Takt von 1 bis BARS genau einmal.
-- Ein Token ist TONHOEHE:DAUER oder R:DAUER fuer Pause.
-- Akkorde stehen in eckigen Klammern: [D3,A3,D4]:2
-- Tonhoehen: C, C#, Db, D ... mit Oktavzahl, z.B. F#4 oder Bb3.
-- DAUER wird in Viertelnoten-Schlaegen angegeben: 4 = vier Viertel, 2 = zwei Viertel, 1 = ein Viertel, 0.5 = Achtel, 0.25 = Sechzehntel. Dezimalwerte sind erlaubt.
-- Gestalte den musikalischen Ausdruck durch sinnvoll differenzierte Anschlagstaerken (Velocity). Schreibe sie als @Wert hinter die Dauer, z.B. D5:1@78 oder [D3,A3,D4]:2@70. Bereich 1–127. Vermeide eine durchgehend identische Velocity, sofern das musikalisch nicht bewusst beabsichtigt ist.
-- Wo ein Sustain-Pedal zum verlangten Instrument und zur Musik passt (insbesondere Klavier), darfst und sollst du es musikalisch sinnvoll einsetzen. Verwende dafuer die eigenstaendigen Tokens PEDAL_ON und PEDAL_OFF an der jeweiligen zeitlichen Position im Takt. Diese Tokens haben keine Dauer.
-- Beispiel: 1 | PEDAL_ON A2:1@58 [E3,A3,C4]:2@68 PEDAL_OFF E4:1@74
-- Bei Instrumenten, fuer die ein Sustain-Pedal musikalisch keinen Sinn ergibt, verwende keine PEDAL-Tokens.
-- Die Summe der Dauern jedes Taktes muss zur gewaehlten Taktart passen. Bei 4/4 also 4 Viertelschlaege, bei 3/4 also 3, bei 3/2 also 6.
-- Keine Markdown-Codezaeune und kein erklaerender Text vor oder nach der Notenschrift.
-`;
-
-document.getElementById('contract').textContent = technicalContract.trim();
 const $ = id => document.getElementById(id);
-const status = msg => $('status').textContent = msg;
+const esc = s => String(s??"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
-function loadSavedKey() {
+function loadSettings(){
   try {
-    const saved = localStorage.getItem(KEY_STORAGE_ID);
-    if (saved) $('key').value = saved;
-  } catch(e) {
-    console.warn('LocalStorage nicht verfuegbar:', e);
-  }
-}
-
-function persistKey() {
-  try {
-    const val = $('key').value.trim();
-    if ($('saveKey').checked && val) {
-      localStorage.setItem(KEY_STORAGE_ID, val);
-    } else if (!$('saveKey').checked) {
-      localStorage.removeItem(KEY_STORAGE_ID);
+    const s = JSON.parse(localStorage.getItem(STORAGE_ID) || "{}");
+    const p = s.provider || "gemini";
+    $("provider").value = p;
+    $("model").value = s.models?.[p] || DEFAULT_MODELS[p];
+    $("rememberApiKey").checked = s.remember !== false;
+    if(s.remember !== false && s.keys?.[p]) {
+      $("apiKey").value = s.keys[p];
     }
-  } catch(e) {
-    console.warn('Fehler beim Speichern:', e);
-  }
+  } catch(_) {}
 }
 
-loadSavedKey();
-
-$('key').addEventListener('input', persistKey);
-$('key').addEventListener('change', persistKey);
-$('key').addEventListener('blur', persistKey);
-$('saveKey').addEventListener('change', persistKey);
-
-$('compose').addEventListener('click', compose);
-$('fromRaw').addEventListener('click', () => {
+function saveSettings(){
   try {
-    const text = $('raw').value.trim();
-    if (!text) throw new Error('Keine Rohantwort vorhanden.');
-    const score = parseScore(text);
-    currentTitle = score.title || 'composition';
-    currentMidi = buildMidi(score);
-    $('midi').disabled = false;
-    $('rawDownload').disabled = false;
-    status('Rohantwort erfolgreich in MIDI umgewandelt.\n' + validateScore(score).join('\n'));
-  } catch (err) {
-    console.error(err);
-    status('Fehler beim Umwandeln der Rohantwort: ' + err.message);
-  }
+    const s = JSON.parse(localStorage.getItem(STORAGE_ID) || "{}");
+    const p = $("provider").value;
+    s.provider = p;
+    s.models = s.models || {};
+    s.models[p] = $("model").value.trim();
+    s.remember = $("rememberApiKey").checked;
+    s.keys = s.keys || {};
+    if(s.remember && $("apiKey").value.trim()){
+      s.keys[p] = $("apiKey").value.trim();
+    } else if(!s.remember) {
+      delete s.keys[p];
+    }
+    localStorage.setItem(STORAGE_ID, JSON.stringify(s));
+  } catch(_) {}
+}
+
+$("provider").addEventListener("change", () => {
+  const p = $("provider").value;
+  $("model").value = DEFAULT_MODELS[p] || "";
+  loadSettings();
+  renderChatContext();
 });
 
-$('midi').addEventListener('click', () => {
-  if (!currentMidi) return;
-  downloadBlob(new Blob([currentMidi], {type:'audio/midi'}), safeName(currentTitle) + '.mid');
+$("apiKey").addEventListener("input", saveSettings);
+$("model").addEventListener("input", saveSettings);
+$("rememberApiKey").addEventListener("change", saveSettings);
+
+$("saveKeyBtn").addEventListener("click", () => {
+  saveSettings();
+  $("status").innerHTML = '<span class="ok">API-Schlüssel für diesen Anbieter gespeichert.</span>';
 });
 
-$('rawDownload').addEventListener('click', () => {
-  downloadBlob(new Blob([$('raw').value], {type:'text/plain;charset=utf-8'}), safeName(currentTitle) + '_raw.txt');
+$("clearApiKeyBtn").addEventListener("click", () => {
+  $("apiKey").value = "";
+  saveSettings();
+  $("status").textContent = "Gespeicherter Schlüssel gelöscht.";
 });
 
-async function compose() {
-  persistKey();
-  const apiKey = $('key').value.trim();
-  const userPrompt = $('prompt').value.trim();
-  if (!apiKey) { status('Bitte API-Key eingeben.'); return; }
-  if (!userPrompt) { status('Bitte Kompositionsauftrag eingeben.'); return; }
+$("toggleKeyBtn").addEventListener("click", () => {
+  $("apiKey").type = $("apiKey").type === "password" ? "text" : "password";
+});
 
-  $('compose').disabled = true;
-  $('midi').disabled = true;
-  $('rawDownload').disabled = true;
-  currentMidi = null;
-  status('Gemini komponiert …');
-
-  try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
-    const body = {
-      contents: [{ role:'user', parts:[{text:userPrompt},{text:technicalContract}] }],
-      generationConfig: { maxOutputTokens:32768, thinkingConfig:{thinkingLevel:'medium'} }
-    };
-    const res = await fetch(url, {
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},
-      body:JSON.stringify(body)
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data?.error?.message || `HTTP ${res.status}`);
-    const text = (data.candidates || []).flatMap(c => c.content?.parts || []).map(p => p.text || '').join('').trim();
-    if (!text) throw new Error('Gemini lieferte keinen Text.');
-    $('raw').value = text;
-    $('rawDownload').disabled = false;
-
-    const score = parseScore(text);
-    currentTitle = score.title || 'composition';
-    currentMidi = buildMidi(score);
-    $('midi').disabled = false;
-    status('Komposition empfangen und MIDI erzeugt.\n' + validateScore(score).join('\n'));
-  } catch (err) {
-    console.error(err);
-    status('Fehler: ' + err.message + '\n\nDie Rohantwort bleibt sichtbar, falls bereits eine angekommen ist.');
-  } finally {
-    $('compose').disabled = false;
-  }
+// --- MIDI Upload Parser ---
+function readVLQ(bytes, pos){
+  let val = 0, b;
+  do {
+    if(pos.i >= bytes.length) throw new Error("MIDI EOF");
+    b = bytes[pos.i++];
+    val = (val << 7) | (b & 0x7f);
+  } while(b & 0x80);
+  return val;
 }
 
-function parseScore(raw) {
-  const text = raw.replace(/^```[^\n]*\n?/i,'').replace(/```\s*$/,'').trim();
-  const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-  const score = { title:'Composition', bars:null, tempo:90, meterNum:4, meterDen:4, key:'', tracks:[] };
-  let track = null;
+function parseUploadedMidi(buffer){
+  const bytes = new Uint8Array(buffer), dv = new DataView(buffer);
+  if(String.fromCharCode(...bytes.slice(0,4)) !== "MThd") throw new Error("Keine gültige MIDI-Datei");
+  const ntrks = dv.getUint16(10), ppq = dv.getUint16(12);
+  let off = 8 + dv.getUint32(4);
+  const tracks = [];
+  let tempo = 96, ts = {n:4, d:4}, title = "Upload";
 
-  for (const line of lines) {
-    let m;
-    if ((m = line.match(/^TITLE\s*:\s*(.+)$/i))) { score.title = m[1].trim(); continue; }
-    if ((m = line.match(/^BARS\s*:\s*(\d+)$/i))) { score.bars = clamp(+m[1],1,1000); continue; }
-    if ((m = line.match(/^TEMPO\s*:\s*(\d+)/i))) { score.tempo = clamp(+m[1],20,300); continue; }
-    if ((m = line.match(/^METER\s*:\s*(\d+)\s*\/\s*(\d+)/i))) { score.meterNum=+m[1]; score.meterDen=+m[2]; continue; }
-    if ((m = line.match(/^KEY\s*:\s*(.+)$/i))) { score.key=m[1].trim(); continue; }
-    if ((m = line.match(/^\[(.+?)\s*\|\s*GM\s*=\s*(\d{1,3})\]$/i))) {
-      const name = m[1].trim();
-      const program = +m[2];
-      if (program < 0 || program > 127) throw new Error(`Ungueltige GM-Programmnummer fuer ${name}: ${program}`);
-      track = {name, program, bars:[]};
-      score.tracks.push(track);
-      continue;
-    }
-    if (track && (m = line.match(/^(\d+)\s*\|\s*(.*)$/))) {
-      track.bars.push({bar:+m[1], tokens:tokenizeBar(m[2].trim())});
-    }
-  }
+  for(let t=0; t<ntrks; t++){
+    if(String.fromCharCode(...bytes.slice(off, off+4)) !== "MTrk") break;
+    const len = dv.getUint32(off+4), end = off + 8 + len;
+    let i = off + 8, tick = 0, run = null;
+    const active = new Map(), notes = [], controls = [];
+    let trkName = `Track ${t+1}`;
 
-  if (!score.tracks.length) throw new Error('Keine Instrumentenspuren gefunden. Erwartet wird z.B. [Piano|GM=0].');
-  for (const t of score.tracks) t.bars.sort((a,b)=>a.bar-b.bar);
-  if (!score.bars) score.bars = Math.max(...score.tracks.flatMap(t => t.bars.map(b => b.bar)),0);
-  if (!score.bars) throw new Error('Keine Takte gefunden.');
-  return score;
-}
-
-function tokenizeBar(s) {
-  if (!s) return [];
-  const tokens = s.match(/\[[^\]]+\]:[^\s]+|[^\s]+/g) || [];
-  return tokens.map(parseToken);
-}
-
-function parseToken(tok) {
-  if (/^PEDAL_ON$/i.test(tok)) return {type:'pedal', value:127, dur:0};
-  if (/^PEDAL_OFF$/i.test(tok)) return {type:'pedal', value:0, dur:0};
-  const m = tok.match(/^(R|\[[^\]]+\]|[A-Ga-g][#b]?-?\d+)\s*:\s*([0-9.]+)(?:@([0-9]+))?$/);
-  if (!m) throw new Error(`Unverstaendliches Notentoken: ${tok}`);
-  const pitchPart=m[1], dur=+m[2], vel=m[3]?clamp(+m[3],1,127):null;
-  if (!(dur>0)) throw new Error(`Ungueltige Dauer: ${tok}`);
-  if (pitchPart==='R') return {type:'note',rest:true,dur,vel};
-  const pitches=pitchPart.startsWith('[') ? pitchPart.slice(1,-1).split(',').map(x=>x.trim()).filter(Boolean) : [pitchPart];
-  return {type:'note',rest:false,pitches,dur,vel};
-}
-
-function validateScore(score) {
-  if (![1,2,4,8,16].includes(score.meterDen)) throw new Error(`Nicht unterstuetzter Taktnenner: ${score.meterDen}`);
-  const beatsPerBar=score.meterNum*(4/score.meterDen);
-  const report=[`Titel: ${score.title}`,`Takte: ${score.bars}`,`Tempo: ${score.tempo} BPM`,`Taktart: ${score.meterNum}/${score.meterDen}`,`Tonart/Modus: ${score.key||'nicht angegeben'}`,`Spuren: ${score.tracks.length}`];
-  for (const t of score.tracks) {
-    const nums=new Set(t.bars.map(b=>b.bar));
-    const missing=[], duplicate=[];
-    const counts={};
-    for (const b of t.bars) counts[b.bar]=(counts[b.bar]||0)+1;
-    for (let i=1;i<=score.bars;i++) { if(!nums.has(i)) missing.push(i); if((counts[i]||0)>1) duplicate.push(i); }
-    const problems=[];
-    for (const b of t.bars) {
-      const sum=b.tokens.reduce((a,x)=>a+(x.type==='pedal'?0:x.dur),0);
-      if (Math.abs(sum-beatsPerBar)>0.0001) problems.push(`T${b.bar}=${trimNum(sum)}`);
-    }
-    const velocities=t.bars.flatMap(b=>b.tokens).filter(x=>x.type!=='pedal' && !x.rest && x.vel!=null).map(x=>x.vel);
-    const pedalEvents=t.bars.flatMap(b=>b.tokens).filter(x=>x.type==='pedal').length;
-    let line=`${t.name} (GM ${t.program}): ${t.bars.length} Takte`;
-    if(velocities.length) line+=`; Velocity ${Math.min(...velocities)}–${Math.max(...velocities)} (${new Set(velocities).size} Werte)`;
-    else line+=`; keine explizite Velocity`;
-    if(pedalEvents) line+=`; ${pedalEvents} Pedal-Ereignisse`;
-    if(missing.length) line+=`; fehlen: ${missing.join(',')}`;
-    if(duplicate.length) line+=`; doppelt: ${duplicate.join(',')}`;
-    if(problems.length) line+=`; abweichende Taktlaengen: ${problems.join(', ')}`;
-    let pedalOn=false;
-    for(const b of t.bars) for(const x of b.tokens) if(x.type==='pedal') {
-      if(x.value>=64) pedalOn=true; else pedalOn=false;
-    }
-    if(pedalOn) { line+=`; WARNUNG: Pedal am Ende noch ON`; }
-    report.push(line);
-  }
-  return report;
-}
-
-function buildMidi(score) {
-  validateScore(score);
-  const chunks=[];
-  chunks.push(strBytes('MThd'),u32(6),u16(1),u16(score.tracks.length+1),u16(PPQ));
-  chunks.push(makeMetaTrack(score));
-  const channels=availableChannels(score.tracks.length);
-  score.tracks.forEach((t,i)=>chunks.push(makeNoteTrack(score,t,channels[i],defaultVelocityForProgram(t.program))));
-  return concatBytes(chunks);
-}
-
-function availableChannels(n) {
-  const out=[];
-  for(let ch=0;ch<16 && out.length<n;ch++) if(ch!==9) out.push(ch);
-  if(n>out.length) throw new Error('Mehr als 15 melodische MIDI-Spuren werden in diesem Labor nicht unterstuetzt.');
-  return out;
-}
-
-function defaultVelocityForProgram(program) {
-  if(program<=7) return 78;
-  if(program>=24 && program<=31) return 72;
-  if(program>=32 && program<=39) return 76;
-  if(program>=40 && program<=51) return 78;
-  if(program>=72 && program<=79) return 82;
-  return 78;
-}
-
-function makeMetaTrack(score) {
-  const ev=[];
-  ev.push({tick:0,order:0,bytes:metaText(0x03,score.title)});
-  const mpqn=Math.round(60000000/score.tempo);
-  ev.push({tick:0,order:0,bytes:[0xFF,0x51,0x03,(mpqn>>16)&255,(mpqn>>8)&255,mpqn&255]});
-  const denPow=Math.round(Math.log2(score.meterDen));
-  ev.push({tick:0,order:0,bytes:[0xFF,0x58,0x04,score.meterNum&255,denPow&255,24,8]});
-  if(score.key) ev.push({tick:0,order:0,bytes:metaText(0x01,'KEY: '+score.key)});
-  return trackChunk(eventsToTrack(ev));
-}
-
-function makeNoteTrack(score,track,channel,defaultVel) {
-  if(!track.bars.length) throw new Error(`Spur [${track.name}] ist leer.`);
-  const ev=[];
-  ev.push({tick:0,order:0,bytes:metaText(0x03,track.name)});
-  ev.push({tick:0,order:1,bytes:[0xC0|channel,track.program]});
-  const beatsPerBar=score.meterNum*(4/score.meterDen);
-  for(const bar of track.bars) {
-    let beat=0;
-    const barStart=(bar.bar-1)*beatsPerBar;
-    for(const token of bar.tokens) {
-      const startTick=Math.round((barStart+beat)*PPQ);
-      if(token.type==='pedal') {
-        ev.push({tick:startTick,order:2,bytes:[0xB0|channel,64,token.value]});
+    while(i < end){
+      const pos = {i}; const delta = readVLQ(bytes, pos); i = pos.i; tick += delta;
+      let status = bytes[i++];
+      if(status < 0x80){ i--; status = run; } else if(status < 0xf0){ run = status; }
+      if(status === 0xff){
+        const type = bytes[i++], posL = {i}, l = readVLQ(bytes, posL); i = posL.i;
+        const data = bytes.slice(i, i+l); i += l;
+        if(type === 0x03) trkName = new TextDecoder().decode(data);
+        if(type === 0x51 && l === 3) tempo = Math.round(60000000 / ((data[0]<<16)|(data[1]<<8)|data[2]));
+        if(type === 0x58 && l >= 2) ts = {n:data[0], d:2**data[1]};
         continue;
       }
-      const endTick=Math.round((barStart+beat+token.dur)*PPQ);
-      if(!token.rest) {
-        for(const p of token.pitches) {
-          const note=noteNumber(p), vel=token.vel??defaultVel;
-          ev.push({tick:startTick,order:3,bytes:[0x90|channel,note,vel]});
-          ev.push({tick:endTick,order:1,bytes:[0x80|channel,note,0]});
-        }
+      const type = status & 0xf0, ch = status & 0x0f;
+      const d1 = bytes[i++], d2 = (type === 0xc0 || type === 0xd0) ? 0 : bytes[i++];
+      const beat = +(tick / ppq).toFixed(4);
+      if(type === 0xb0 && d1 === 64) controls.push([beat, 64, d2]);
+      else if(type === 0x90 && d2 > 0){
+        const arr = active.get(d1) || [];
+        arr.push({beat, vel:d2});
+        active.set(d1, arr);
+      } else if(type === 0x80 || (type === 0x90 && d2 === 0)){
+        const arr = active.get(d1) || [];
+        const on = arr.shift();
+        if(on) notes.push([on.beat, +(beat - on.beat).toFixed(4), d1, on.vel, 0, 1.0]);
       }
-      beat+=token.dur;
     }
+    if(notes.length || controls.length) tracks.push({nm:trkName, ch:0, pg:0, nt:notes, ct:controls});
+    off = end;
   }
-  const scoreEndTick=Math.round(score.bars*beatsPerBar*PPQ);
-  ev.push({tick:scoreEndTick,order:4,bytes:[0xB0|channel,64,0]});
-  return trackChunk(eventsToTrack(ev));
+  return {ti:title, bpm:tempo, ts, k:"unknown", sm:"Hochgeladene Datei", tr:tracks};
 }
 
-function noteNumber(name) {
-  const m=name.match(/^([A-Ga-g])([#b]?)(-?\d+)$/);
-  if(!m) throw new Error(`Ungueltige Tonhoehe: ${name}`);
-  const base={C:0,D:2,E:4,F:5,G:7,A:9,B:11}[m[1].toUpperCase()];
-  const accidental=m[2]==='#'?1:m[2]==='b'?-1:0;
-  const octave=+m[3];
-  const n=(octave+1)*12+base+accidental;
-  if(n<0||n>127) throw new Error(`Ton ausserhalb MIDI-Bereich: ${name}`);
-  return n;
+$("uploadInput").addEventListener("change", async e => {
+  const f = e.target.files?.[0];
+  if(!f) return;
+  try {
+    uploadedName = f.name;
+    if(f.name.endsWith(".json") || f.type === "application/json"){
+      uploadedScore = JSON.parse(await f.text());
+    } else {
+      uploadedScore = parseUploadedMidi(await f.arrayBuffer());
+    }
+    const count = (uploadedScore.tr||[]).reduce((s,t)=>s+(t.nt?.length||0), 0);
+    $("uploadInfo").textContent = `Geladen: ${f.name} (${count} Noten)`;
+    $("status").textContent = "Material geladen. Wird als Referenz mitgesendet.";
+  } catch(err) {
+    uploadedScore = null;
+    $("uploadInfo").textContent = "Fehler beim Lesen des Uploads.";
+    $("status").innerHTML = `<span class="err">${esc(err.message)}</span>`;
+  }
+});
+
+$("clearUploadBtn").addEventListener("click", () => {
+  uploadedScore = null;
+  $("uploadInput").value = "";
+  $("uploadInfo").textContent = "Kein Material geladen.";
+});
+
+// --- API Router ---
+async function callLLM(provider, model, apiKey, systemPrompt, userPrompt, jsonSchema=null){
+  if(provider === "anthropic"){
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method:"POST",
+      headers:{
+        "content-type":"application/json",
+        "x-api-key":apiKey,
+        "anthropic-version":"2023-06-01",
+        "anthropic-dangerous-direct-browser-access":"true"
+      },
+      body:JSON.stringify({
+        model,
+        max_tokens:32000,
+        system:systemPrompt,
+        messages:[{role:"user", content:userPrompt}]
+      })
+    });
+    const data = await r.json();
+    if(!r.ok) throw new Error(data?.error?.message || `Anthropic HTTP ${r.status}`);
+    const text = data.content?.filter(x=>x.type==="text").map(x=>x.text).join("") || "";
+    return {text, usage:{in:data.usage?.input_tokens||0, out:data.usage?.output_tokens||0}};
+  }
+  if(provider === "gemini"){
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const r = await fetch(url, {
+      method:"POST",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify({
+        system_instruction:{parts:[{text:systemPrompt}]},
+        contents:[{role:"user", parts:[{text:userPrompt}]}],
+        generationConfig:{
+          maxOutputTokens:32000,
+          thinkingConfig:{thinkingLevel:"MEDIUM"},
+          responseMimeType: "application/json"
+        }
+      })
+    });
+    const data = await r.json();
+    if(!r.ok) throw new Error(data?.error?.message || `Gemini HTTP ${r.status}`);
+    const text = data.candidates?.[0]?.content?.parts?.map(x=>x.text||"").join("") || "";
+    return {text, usage:{in:data.usageMetadata?.promptTokenCount||0, out:data.usageMetadata?.candidatesTokenCount||0}};
+  }
+  if(provider === "openai"){
+    const r = await fetch("https://api.openai.com/v1/chat/completions", {
+      method:"POST",
+      headers:{"content-type":"application/json", "authorization":`Bearer ${apiKey}`},
+      body:JSON.stringify({
+        model,
+        messages:[{role:"system", content:systemPrompt}, {role:"user", content:userPrompt}],
+        response_format:{type:"json_object"}
+      })
+    });
+    const data = await r.json();
+    if(!r.ok) throw new Error(data?.error?.message || `OpenAI HTTP ${r.status}`);
+    const text = data.choices?.[0]?.message?.content || "";
+    return {text, usage:{in:data.usage?.prompt_tokens||0, out:data.usage?.completion_tokens||0}};
+  }
 }
 
-function eventsToTrack(events) {
-  events.sort((a,b)=>a.tick-b.tick||a.order-b.order);
-  const out=[]; let prev=0;
-  for(const e of events) { out.push(...varLen(e.tick-prev),...e.bytes); prev=e.tick; }
-  out.push(0x00,0xFF,0x2F,0x00);
+function extractJSON(str){
+  str = str.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  const s = str.indexOf("{"), e = str.lastIndexOf("}");
+  if(s < 0 || e < s) throw new Error("Kein valides JSON in Modellantwort gefunden.");
+  return JSON.parse(str.slice(s, e+1));
+}
+
+// --- MIDI Builder ---
+function vlq(v){
+  v = Math.max(0, Math.round(v)); let buf = v & 0x7f, out = [];
+  while((v >>= 7)){ buf <<= 8; buf |= ((v & 0x7f) | 0x80); }
+  while(true){ out.push(buf & 0xff); if(buf & 0x80) buf >>= 8; else break; }
   return out;
 }
-function trackChunk(bytes){ return concatBytes([strBytes('MTrk'),u32(bytes.length),bytes]); }
-function metaText(type,text){ const b=Array.from(new TextEncoder().encode(text)); return [0xFF,type,...varLen(b.length),...b]; }
-function varLen(v){ v=Math.max(0,Math.floor(v)); let buffer=v&0x7F; const out=[]; while((v>>=7)){buffer<<=8;buffer|=((v&0x7F)|0x80);} while(true){out.push(buffer&0xFF);if(buffer&0x80)buffer>>=8;else break;} return out; }
-function u16(n){return[(n>>8)&255,n&255];}
-function u32(n){return[(n>>>24)&255,(n>>>16)&255,(n>>>8)&255,n&255];}
-function strBytes(s){return Array.from(s).map(c=>c.charCodeAt(0));}
-function concatBytes(parts){const arrays=parts.map(p=>p instanceof Uint8Array?p:Uint8Array.from(p));const len=arrays.reduce((n,a)=>n+a.length,0);const out=new Uint8Array(len);let pos=0;for(const a of arrays){out.set(a,pos);pos+=a.length;}return out;}
-function clamp(x,a,b){return Math.max(a,Math.min(b,x));}
-function trimNum(n){return Number(n.toFixed(4)).toString();}
-function safeName(s){return(s||'composition').replace(/[^a-z0-9_-]+/gi,'_').replace(/^_+|_+$/g,'').slice(0,80)||'composition';}
+function u16(n){ return [(n>>8)&255, n&255]; }
+function u32(n){ return [(n>>24)&255, (n>>16)&255, (n>>8)&255, n&255]; }
+function strB(s){ return Array.from(new TextEncoder().encode(s)); }
 
-function downloadBlob(blob,filename){
+function buildMidi(score){
+  const PPQ = 480, tracks = [];
+  const tempo = Math.max(20, Math.min(300, +score.bpm || 96));
+  const ts = score.ts || {n:4, d:4};
+  
+  // Meta Conductor Track
+  const cond = [];
+  const mpqn = Math.round(60000000 / tempo);
+  cond.push({t:0, b:[0xff,0x51,0x03,(mpqn>>16)&255,(mpqn>>8)&255,mpqn&255]});
+  cond.push({t:0, b:[0xff,0x58,0x04,+ts.n||4,Math.round(Math.log2(+ts.d||4)),24,8]});
+  cond.push({t:0, b:[0xff,0x03,...vlq(strB(score.ti||"Composition").length),...strB(score.ti||"Composition")]});
+  tracks.push(encodeMTrk(cond));
+
+  (score.tr || []).forEach((tr, idx) => {
+    const ch = Math.min(15, +tr.ch || 0);
+    const ev = [];
+    ev.push({t:0, b:[0xff,0x03,...vlq(strB(tr.nm||`Track ${idx+1}`).length),...strB(tr.nm||`Track ${idx+1}`)]});
+    ev.push({t:0, b:[0xc0|ch, Math.max(0, Math.min(127, +tr.pg||0))]});
+
+    for(const c of (tr.ct||[])){
+      ev.push({t:Math.round(+c[0]*PPQ), b:[0xb0|ch, Math.min(127,+c[1]), Math.min(127,+c[2])]});
+    }
+    for(const n of (tr.nt||[])){
+      const start = Math.round(+n[0]*PPQ);
+      const gate = Number.isFinite(+n[5]) ? +n[5] : 0.95;
+      const end = Math.max(start+1, Math.round((+n[0] + (+n[1]*gate))*PPQ));
+      const p = Math.max(0, Math.min(127, Math.round(+n[2])));
+      const v = Math.max(1, Math.min(127, Math.round(+n[3]||80)));
+      ev.push({t:start, b:[0x90|ch, p, v]});
+      ev.push({t:end, b:[0x80|ch, p, 0]});
+    }
+    tracks.push(encodeMTrk(ev));
+  });
+
+  const header = [...strB("MThd"), ...u32(6), ...u16(1), ...u16(tracks.length), ...u16(PPQ)];
+  return new Uint8Array([...header, ...tracks.flat()]);
+}
+
+function encodeMTrk(events){
+  events.sort((a,b)=>a.t-b.t);
+  let last = 0, data = [];
+  for(const e of events){
+    data.push(...vlq(e.t - last), ...e.b);
+    last = e.t;
+  }
+  data.push(0, 0xff, 0x2f, 0);
+  return [...strB("MTrk"), ...u32(data.length), ...data];
+}
+
+function downloadBlob(data, name, type){
   if (window.AndroidBridge && window.AndroidBridge.saveBlob) {
     const reader = new FileReader();
-    reader.onloadend = function() {
-      window.AndroidBridge.saveBlob(reader.result, filename, blob.type);
-    };
-    reader.readAsDataURL(blob);
+    reader.onloadend = () => window.AndroidBridge.saveBlob(reader.result, name, type);
+    reader.readAsDataURL(new Blob([data], {type}));
     return;
   }
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url;a.download=filename;a.style.display='none';document.body.appendChild(a);a.click();
-  setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},1500);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([data], {type}));
+  a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 500);
 }
+
+// --- Kompositions-Logik ---
+async function compose(){
+  saveSettings();
+  const provider = $("provider").value;
+  const model = $("model").value.trim();
+  const key = $("apiKey").value.trim();
+  if(!key){ $("status").innerHTML = '<span class="err">Bitte API-Key eingeben.</span>'; return; }
+
+  $("composeBtn").disabled = true;
+  $("status").textContent = "Entwickle musikalischen Impuls …";
+
+  try {
+    let promptText = `Besetzung: ${$("ensemble").value}\nTakte: ${$("measures").value}\nTaktart: ${$("meter").value}\nTempo: ${$("tempo").value} BPM\nTonart: ${$("key").value}\n\nAuftrag:\n${$("prompt").value}`;
+    if(uploadedScore){
+      promptText += `\n\nVORHANDENES MATERIAL (${uploadedName}):\n` + JSON.stringify(uploadedScore);
+    }
+
+    // Phase 1: Konzept
+    const conceptRes = await callLLM(provider, model, key, SYSTEM_PREFIX, `Formuliere einen kurzen musikalischen Gedanken/Impuls für folgenden Auftrag:\n\n${promptText}`);
+    $("conceptView").innerHTML = `<strong>${esc(provider.toUpperCase())} Konzept:</strong><br>${esc(conceptRes.text).replace(/\n/g,"<br>")}`;
+
+    // Phase 2: Komposition
+    $("status").textContent = "Komponiere MIDI-Partitur …";
+    const compPrompt = `${TECHNICAL_PROMPT}\n\nAUFTRAG:\n${promptText}\n\nDEIN KONZEPT:\n${conceptRes.text}\n\nGib jetzt die fertige JSON-Partitur aus.`;
+    const scoreRes = await callLLM(provider, model, key, SYSTEM_PREFIX, compPrompt);
+    const score = extractJSON(scoreRes.text);
+
+    lastScore = score;
+    lastProvider = provider;
+    lastModel = model;
+    lastMidiBytes = buildMidi(score);
+
+    $("downloadBtn").disabled = false;
+    $("jsonBtn").disabled = false;
+    
+    // Kostenberechnung
+    const rate = TOKEN_RATES[model] || {in:1.0, out:4.0};
+    const cost = ((scoreRes.usage.in * rate.in + scoreRes.usage.out * rate.out) / 1000000).toFixed(4);
+    
+    $("lastResult").innerHTML = `<strong>${esc(score.ti || "Komposition")}</strong><br>${esc(score.bpm)} BPM · ${esc(score.k || "")} · ${esc(score.tr?.length||1)} Spur(en)<br><small>${esc(score.sm || "")}</small><div class="costmeta">Tokens: ${scoreRes.usage.in} In / ${scoreRes.usage.out} Out (ca. $${cost})</div>`;
+
+    validateScore(score);
+    renderChatContext();
+    addHistory(score, provider, model);
+    $("status").innerHTML = '<span class="ok">Komposition erfolgreich abgeschlossen!</span>';
+  } catch(err) {
+    $("status").innerHTML = `<span class="err">Fehler: ${esc(err.message)}</span>`;
+  } finally {
+    $("composeBtn").disabled = false;
+  }
+}
+
+function validateScore(score){
+  const issues = [];
+  let noteCount = 0;
+  (score.tr||[]).forEach((t, ti) => {
+    noteCount += t.nt?.length || 0;
+    (t.nt||[]).forEach((n, ni) => {
+      if(n[2] < 0 || n[2] > 127) issues.push(`Spur ${ti+1}, Note ${ni+1}: Pitch ${n[2]} ungültig`);
+    });
+  });
+  $("validation").textContent = `Geprüfte Noten: ${noteCount}\nSpuren: ${score.tr?.length||0}\n` + (issues.length ? "Warnungen:\n- " + issues.join("\n- ") : "Keine technischen MIDI-Fehler.");
+}
+
+// --- Chat & Revision ---
+function renderChatContext(){
+  $("chatContext").innerHTML = lastScore 
+    ? `Aktives Stück: <strong>${esc(lastScore.ti||"Unbenannt")}</strong> (mit ${$("provider").value.toUpperCase()})` 
+    : "Noch kein aktives Stück geladen.";
+}
+
+async function sendChat(){
+  const msg = $("chatInput").value.trim();
+  if(!msg || !lastScore) return;
+  const key = $("apiKey").value.trim();
+  const provider = $("provider").value;
+  const model = $("model").value.trim();
+  if(!key){ alert("Bitte API-Key eingeben."); return; }
+
+  appendChat("user", msg);
+  $("chatInput").value = "";
+  $("status").textContent = "KI überarbeitet Partitur …";
+
+  try {
+    const chatPrompt = `${TECHNICAL_PROMPT}\n\nAKTUELLE PARTITUR:\n${JSON.stringify(lastScore)}\n\nNUTZER-ANWEISUNG / FRAGE:\n${msg}\n\nAntworte mit einem JSON-Objekt im Format: {"reply":"Deine Textantwort", "score": null ODER modifizierte Partitur falls Noten geändert wurden}`;
+    const res = await callLLM(provider, model, key, SYSTEM_PREFIX, chatPrompt);
+    const envelope = extractJSON(res.text);
+
+    appendChat("ai", envelope.reply || "Änderung umgesetzt.");
+    if(envelope.score){
+      lastScore = envelope.score;
+      lastMidiBytes = buildMidi(lastScore);
+      $("lastResult").innerHTML = `<strong>${esc(lastScore.ti)} (Überarbeitet)</strong>`;
+      validateScore(lastScore);
+    }
+    $("status").innerHTML = '<span class="ok">Antwort erhalten.</span>';
+  } catch(err) {
+    appendChat("ai", "Fehler: " + err.message);
+    $("status").innerHTML = `<span class="err">${esc(err.message)}</span>`;
+  }
+}
+
+function appendChat(role, text){
+  const d = document.createElement("div");
+  d.className = `chatmsg chat${role}`;
+  d.textContent = (role==="user"?"Du: ":"KI: ") + text;
+  $("chatLog").appendChild(d);
+  $("chatLog").scrollTop = $("chatLog").scrollHeight;
+}
+
+// --- History ---
+function addHistory(score, provider, model){
+  const h = JSON.parse(localStorage.getItem(HISTORY_ID) || "[]");
+  h.unshift({time:new Date().toLocaleTimeString(), title:score.ti||"Komposition", score, provider, model});
+  localStorage.setItem(HISTORY_ID, JSON.stringify(h.slice(0,10)));
+  renderHistory();
+}
+
+function renderHistory(){
+  const h = JSON.parse(localStorage.getItem(HISTORY_ID) || "[]");
+  const box = $("historyList");
+  if(!h.length){ box.textContent = "Noch kein Verlauf."; return; }
+  box.innerHTML = "";
+  h.forEach(item => {
+    const d = document.createElement("div");
+    d.className = "historyitem";
+    d.innerHTML = `<strong>${esc(item.title)}</strong><div class="historymeta">${esc(item.provider.toUpperCase())} · ${esc(item.time)}</div>
+    <div class="historyactions">
+      <button class="secondary smallbtn" data-act="load">Laden</button>
+      <button class="secondary smallbtn" data-act="midi">MIDI</button>
+    </div>`;
+    d.querySelector('[data-act="load"]').onclick = () => {
+      lastScore = item.score;
+      lastMidiBytes = buildMidi(item.score);
+      $("downloadBtn").disabled = false;
+      $("jsonBtn").disabled = false;
+      renderChatContext();
+      validateScore(item.score);
+      $("status").textContent = "Aus Verlauf geladen.";
+    };
+    d.querySelector('[data-act="midi"]').onclick = () => {
+      downloadBlob(buildMidi(item.score), `${item.title}.mid`, "audio/midi");
+    };
+    box.appendChild(d);
+  });
+}
+
+$("clearHistoryBtn").onclick = () => {
+  localStorage.removeItem(HISTORY_ID);
+  renderHistory();
+};
+
+$("composeBtn").onclick = compose;
+$("chatSendBtn").onclick = sendChat;
+$("chatInput").onkeydown = e => { if(e.key==="Enter" && (e.ctrlKey||e.metaKey)) sendChat(); };
+$("downloadBtn").onclick = () => lastMidiBytes && downloadBlob(lastMidiBytes, `${lastScore?.ti||"composition"}.mid`, "audio/midi");
+$("jsonBtn").onclick = () => lastScore && downloadBlob(JSON.stringify(lastScore,null,2), `${lastScore?.ti||"composition"}.json`, "application/json");
+
+loadSettings();
+renderHistory();
 </script>
 </body>
 </html>
