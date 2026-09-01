@@ -168,8 +168,8 @@
 <script>
 'use strict';
 
-const STORAGE_ID = "ai_midi_composer_settings_v31";
-const HISTORY_ID = "ai_midi_composer_history_v31";
+const STORAGE_ID = "ai_midi_composer_settings_v32";
+const HISTORY_ID = "ai_midi_composer_history_v32";
 
 const DEFAULT_MODELS = {
   gemini: "gemini-3.7-flash",
@@ -232,7 +232,9 @@ function getStoredData(){
 
 function syncUIForProvider(p){
   const data = getStoredData();
-  $("model").value = data.models?.[p] || DEFAULT_MODELS[p] || "";
+  // Modellname immer passend zum gewählten Anbieter setzen
+  $("model").value = DEFAULT_MODELS[p] || "";
+  // Gespeicherten Key für diesen Anbieter laden (falls vorhanden)
   $("apiKey").value = (data.remember !== false && data.keys?.[p]) ? data.keys[p] : "";
   renderChatContext();
 }
@@ -242,8 +244,6 @@ function saveCurrentState(){
     const data = getStoredData();
     const p = $("provider").value;
     data.provider = p;
-    data.models = data.models || {};
-    data.models[p] = $("model").value.trim();
     data.remember = $("rememberApiKey").checked;
     data.keys = data.keys || {};
     if(data.remember && $("apiKey").value.trim()){
@@ -263,15 +263,14 @@ function initApp(){
   syncUIForProvider(p);
 }
 
-// Event-Handler für Provider-Umschaltung
+// Direkte Umschaltung bei Auswahl im Dropdown
 $("provider").addEventListener("change", (e) => {
-  const newProvider = e.target.value;
-  syncUIForProvider(newProvider);
+  const p = e.target.value;
+  syncUIForProvider(p);
   saveCurrentState();
 });
 
 $("apiKey").addEventListener("input", saveCurrentState);
-$("model").addEventListener("input", saveCurrentState);
 $("rememberApiKey").addEventListener("change", saveCurrentState);
 
 $("saveKeyBtn").addEventListener("click", () => {
@@ -440,4 +439,241 @@ async function callLLM(provider, model, apiKey, systemPrompt, userPrompt){
 }
 
 function extractJSON(str){
-  str = str.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*
+  str = str.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  const s = str.indexOf("{"), e = str.lastIndexOf("}");
+  if(s < 0 || e < s) throw new Error("Kein valides JSON in Modellantwort gefunden.");
+  return JSON.parse(str.slice(s, e+1));
+}
+
+// --- MIDI Builder ---
+function vlq(v){
+  v = Math.max(0, Math.round(v)); let buf = v & 0x7f, out = [];
+  while((v >>= 7)){ buf <<= 8; buf |= ((v & 0x7f) | 0x80); }
+  while(true){ out.push(buf & 0xff); if(buf & 0x80) buf >>= 8; else break; }
+  return out;
+}
+function u16(n){ return [(n>>8)&255, n&255]; }
+function u32(n){ return [(n>>24)&255, (n>>16)&255, (n>>8)&255, n&255]; }
+function strB(s){ return Array.from(new TextEncoder().encode(s)); }
+
+function buildMidi(score){
+  const PPQ = 480, tracks = [];
+  const tempo = Math.max(20, Math.min(300, +score.bpm || 96));
+  const ts = score.ts || {n:4, d:4};
+  
+  const cond = [];
+  const mpqn = Math.round(60000000 / tempo);
+  cond.push({t:0, b:[0xff,0x51,0x03,(mpqn>>16)&255,(mpqn>>8)&255,mpqn&255]});
+  cond.push({t:0, b:[0xff,0x58,0x04,+ts.n||4,Math.round(Math.log2(+ts.d||4)),24,8]});
+  cond.push({t:0, b:[0xff,0x03,...vlq(strB(score.ti||"Composition").length),...strB(score.ti||"Composition")]});
+  tracks.push(encodeMTrk(cond));
+
+  (score.tr || []).forEach((tr, idx) => {
+    const ch = Math.min(15, +tr.ch || 0);
+    const ev = [];
+    ev.push({t:0, b:[0xff,0x03,...vlq(strB(tr.nm||`Track ${idx+1}`).length),...strB(tr.nm||`Track ${idx+1}`)]});
+    ev.push({t:0, b:[0xc0|ch, Math.max(0, Math.min(127, +tr.pg||0))]});
+
+    for(const c of (tr.ct||[])){
+      ev.push({t:Math.round(+c[0]*PPQ), b:[0xb0|ch, Math.min(127,+c[1]), Math.min(127,+c[2])]});
+    }
+    for(const n of (tr.nt||[])){
+      const start = Math.round(+n[0]*PPQ);
+      const gate = Number.isFinite(+n[5]) ? +n[5] : 0.95;
+      const end = Math.max(start+1, Math.round((+n[0] + (+n[1]*gate))*PPQ));
+      const p = Math.max(0, Math.min(127, Math.round(+n[2])));
+      const v = Math.max(1, Math.min(127, Math.round(+n[3]||80)));
+      ev.push({t:start, b:[0x90|ch, p, v]});
+      ev.push({t:end, b:[0x80|ch, p, 0]});
+    }
+    tracks.push(encodeMTrk(ev));
+  });
+
+  const header = [...strB("MThd"), ...u32(6), ...u16(1), ...u16(tracks.length), ...u16(PPQ)];
+  return new Uint8Array([...header, ...tracks.flat()]);
+}
+
+function encodeMTrk(events){
+  events.sort((a,b)=>a.t-b.t);
+  let last = 0, data = [];
+  for(const e of events){
+    data.push(...vlq(e.t - last), ...e.b);
+    last = e.t;
+  }
+  data.push(0, 0xff, 0x2f, 0);
+  return [...strB("MTrk"), ...u32(data.length), ...data];
+}
+
+function downloadBlob(data, name, type){
+  if (window.AndroidBridge && window.AndroidBridge.saveBlob) {
+    const reader = new FileReader();
+    reader.onloadend = () => window.AndroidBridge.saveBlob(reader.result, name, type);
+    reader.readAsDataURL(new Blob([data], {type}));
+    return;
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([data], {type}));
+  a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 500);
+}
+
+// --- Kompositions-Logik ---
+async function compose(){
+  saveCurrentState();
+  const provider = $("provider").value;
+  const model = $("model").value.trim();
+  const key = $("apiKey").value.trim();
+  if(!key){ $("status").innerHTML = `<span class="err">Bitte API-Key für ${provider.toUpperCase()} eingeben.</span>`; return; }
+
+  $("composeBtn").disabled = true;
+  $("status").textContent = "Entwickle musikalischen Impuls …";
+
+  try {
+    let promptText = `Besetzung: ${$("ensemble").value}\nTakte: ${$("measures").value}\nTaktart: ${$("meter").value}\nTempo: ${$("tempo").value} BPM\nTonart: ${$("key").value}\n\nAuftrag:\n${$("prompt").value}`;
+    if(uploadedScore){
+      promptText += `\n\nVORHANDENES MATERIAL (${uploadedName}):\n` + JSON.stringify(uploadedScore);
+    }
+
+    const conceptRes = await callLLM(provider, model, key, SYSTEM_PREFIX, `Formuliere einen kurzen musikalischen Gedanken/Impuls für folgenden Auftrag:\n\n${promptText}`);
+    $("conceptView").innerHTML = `<strong>${esc(provider.toUpperCase())} Konzept:</strong><br>${esc(conceptRes.text).replace(/\n/g,"<br>")}`;
+
+    $("status").textContent = "Komponiere MIDI-Partitur …";
+    const compPrompt = `${TECHNICAL_PROMPT}\n\nAUFTRAG:\n${promptText}\n\nDEIN KONZEPT:\n${conceptRes.text}\n\nGib jetzt die fertige JSON-Partitur aus.`;
+    const scoreRes = await callLLM(provider, model, key, SYSTEM_PREFIX, compPrompt);
+    const score = extractJSON(scoreRes.text);
+
+    lastScore = score;
+    lastProvider = provider;
+    lastModel = model;
+    lastMidiBytes = buildMidi(score);
+
+    $("downloadBtn").disabled = false;
+    $("jsonBtn").disabled = false;
+    
+    const rate = TOKEN_RATES[model] || {in:1.0, out:4.0};
+    const cost = ((scoreRes.usage.in * rate.in + scoreRes.usage.out * rate.out) / 1000000).toFixed(4);
+    
+    $("lastResult").innerHTML = `<strong>${esc(score.ti || "Komposition")}</strong><br>${esc(score.bpm)} BPM · ${esc(score.k || "")} · ${esc(score.tr?.length||1)} Spur(en)<br><small>${esc(score.sm || "")}</small><div class="costmeta">Tokens: ${scoreRes.usage.in} In / ${scoreRes.usage.out} Out (ca. $${cost})</div>`;
+
+    validateScore(score);
+    renderChatContext();
+    addHistory(score, provider, model);
+    $("status").innerHTML = '<span class="ok">Komposition erfolgreich abgeschlossen!</span>';
+  } catch(err) {
+    $("status").innerHTML = `<span class="err">Fehler: ${esc(err.message)}</span>`;
+  } finally {
+    $("composeBtn").disabled = false;
+  }
+}
+
+function validateScore(score){
+  const issues = [];
+  let noteCount = 0;
+  (score.tr||[]).forEach((t, ti) => {
+    noteCount += t.nt?.length || 0;
+    (t.nt||[]).forEach((n, ni) => {
+      if(n[2] < 0 || n[2] > 127) issues.push(`Spur ${ti+1}, Note ${ni+1}: Pitch ${n[2]} ungültig`);
+    });
+  });
+  $("validation").textContent = `Geprüfte Noten: ${noteCount}\nSpuren: ${score.tr?.length||0}\n` + (issues.length ? "Warnungen:\n- " + issues.join("\n- ") : "Keine technischen MIDI-Fehler.");
+}
+
+// --- Chat & Revision ---
+function renderChatContext(){
+  $("chatContext").innerHTML = lastScore 
+    ? `Aktives Stück: <strong>${esc(lastScore.ti||"Unbenannt")}</strong> (mit ${$("provider").value.toUpperCase()})` 
+    : "Noch kein aktives Stück geladen.";
+}
+
+async function sendChat(){
+  const msg = $("chatInput").value.trim();
+  if(!msg || !lastScore) return;
+  const key = $("apiKey").value.trim();
+  const provider = $("provider").value;
+  const model = $("model").value.trim();
+  if(!key){ alert("Bitte API-Key eingeben."); return; }
+
+  appendChat("user", msg);
+  $("chatInput").value = "";
+  $("status").textContent = "KI überarbeitet Partitur …";
+
+  try {
+    const chatPrompt = `${TECHNICAL_PROMPT}\n\nAKTUELLE PARTITUR:\n${JSON.stringify(lastScore)}\n\nNUTZER-ANWEISUNG / FRAGE:\n${msg}\n\nAntworte mit einem JSON-Objekt im Format: {"reply":"Deine Textantwort", "score": null ODER modifizierte Partitur falls Noten geändert wurden}`;
+    const res = await callLLM(provider, model, key, SYSTEM_PREFIX, chatPrompt);
+    const envelope = extractJSON(res.text);
+
+    appendChat("ai", envelope.reply || "Änderung umgesetzt.");
+    if(envelope.score){
+      lastScore = envelope.score;
+      lastMidiBytes = buildMidi(lastScore);
+      $("lastResult").innerHTML = `<strong>${esc(lastScore.ti)} (Überarbeitet)</strong>`;
+      validateScore(lastScore);
+    }
+    $("status").innerHTML = '<span class="ok">Antwort erhalten.</span>';
+  } catch(err) {
+    appendChat("ai", "Fehler: " + err.message);
+    $("status").innerHTML = `<span class="err">${esc(err.message)}</span>`;
+  }
+}
+
+function appendChat(role, text){
+  const d = document.createElement("div");
+  d.className = `chatmsg chat${role}`;
+  d.textContent = (role==="user"?"Du: ":"KI: ") + text;
+  $("chatLog").appendChild(d);
+  $("chatLog").scrollTop = $("chatLog").scrollHeight;
+}
+
+// --- History ---
+function addHistory(score, provider, model){
+  const h = JSON.parse(localStorage.getItem(HISTORY_ID) || "[]");
+  h.unshift({time:new Date().toLocaleTimeString(), title:score.ti||"Komposition", score, provider, model});
+  localStorage.setItem(HISTORY_ID, JSON.stringify(h.slice(0,10)));
+  renderHistory();
+}
+
+function renderHistory(){
+  const h = JSON.parse(localStorage.getItem(HISTORY_ID) || "[]");
+  const box = $("historyList");
+  if(!h.length){ box.textContent = "Noch kein Verlauf."; return; }
+  box.innerHTML = "";
+  h.forEach(item => {
+    const d = document.createElement("div");
+    d.className = "historyitem";
+    d.innerHTML = `<strong>${esc(item.title)}</strong><div class="historymeta">${esc(item.provider.toUpperCase())} · ${esc(item.time)}</div>
+    <div class="historyactions">
+      <button class="secondary smallbtn" data-act="load">Laden</button>
+      <button class="secondary smallbtn" data-act="midi">MIDI</button>
+    </div>`;
+    d.querySelector('[data-act="load"]').onclick = () => {
+      lastScore = item.score;
+      lastMidiBytes = buildMidi(item.score);
+      $("downloadBtn").disabled = false;
+      $("jsonBtn").disabled = false;
+      renderChatContext();
+      validateScore(item.score);
+      $("status").textContent = "Aus Verlauf geladen.";
+    };
+    d.querySelector('[data-act="midi"]').onclick = () => {
+      downloadBlob(buildMidi(item.score), `${item.title}.mid`, "audio/midi");
+    };
+    box.appendChild(d);
+  });
+}
+
+$("clearHistoryBtn").onclick = () => {
+  localStorage.removeItem(HISTORY_ID);
+  renderHistory();
+};
+
+$("composeBtn").onclick = compose;
+$("chatSendBtn").onclick = sendChat;
+$("chatInput").onkeydown = e => { if(e.key==="Enter" && (e.ctrlKey||e.metaKey)) sendChat(); };
+$("downloadBtn").onclick = () => lastMidiBytes && downloadBlob(lastMidiBytes, `${lastScore?.ti||"composition"}.mid`, "audio/midi");
+$("jsonBtn").onclick = () => lastScore && downloadBlob(JSON.stringify(lastScore,null,2), `${lastScore?.ti||"composition"}.json`, "application/json");
+
+initApp();
+renderHistory();
+</script>
+</body>
+</html>
