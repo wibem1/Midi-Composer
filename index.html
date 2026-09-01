@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI MIDI Composer – Universal Studio</title>
+<style>
+  :root { --bg:#111318; --panel:#1a1f27; --panel2:#232a34; --text:#eef2f7; --muted:#9ba7b4; --accent:#7cc4ff; --ok:#74d99f; --warn:#ffd166; --err:#ff7b7b; --line:#303845; }
+  * { box-sizing:border-box; }
+  html { min-height:100%; overflow-y:auto; }
+  body { margin:0; min-height:100%; overflow-y:auto; background:var(--bg); color:var(--text); font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif; }
+  header { padding:14px 18px; background:#0d0f13; border-bottom:1px solid #2b323d; position:sticky; top:0; z-index:2; }
+  header h1 { margin:0; font-size:18px; }
+  main { display:grid; grid-template-columns:minmax(320px,460px) 1fr; gap:14px; padding:14px; min-height:calc(100vh - 55px); height:auto; align-items:start; }
+  .panel { background:var(--panel); border:1px solid #2d3540; border-radius:10px; padding:14px; overflow:visible; min-height:0; }
+  label { display:block; margin:10px 0 5px; color:#cbd4df; font-weight:650; }
+  input, select, textarea, button { font:inherit; }
+  input, select, textarea { width:100%; padding:9px; border-radius:7px; border:1px solid #3a4553; background:#10141a; color:var(--text); }
+  textarea { resize:vertical; min-height:110px; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  button { border:0; border-radius:7px; padding:10px 14px; cursor:pointer; font-weight:700; }
+  .primary { background:var(--accent); color:#07121a; width:100%; margin-top:12px; }
+  .secondary { background:#303947; color:var(--text); }
+  .toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+  pre { white-space:pre-wrap; word-break:break-word; background:#0f1318; padding:12px; border-radius:8px; border:1px solid #303845; min-height:160px; }
+  .status { padding:8px 10px; border-radius:7px; background:#10141a; border:1px solid #303845; margin-bottom:10px; }
+  .ok { color:var(--ok); } .warn { color:var(--warn); } .err { color:var(--err); }
+  details { margin-top:10px; }
+  summary { cursor:pointer; color:#cbd4df; }
+  small { color:var(--muted); }
+
+  .keyrow { display:flex; gap:8px; align-items:center; margin-top:7px; flex-wrap:wrap; }
+  .checklabel { margin:0; font-weight:400; display:flex; gap:7px; align-items:center; flex:1 1 220px; }
+  .checklabel input { width:auto; }
+  .smallbtn { padding:7px 10px; font-size:12px; }
+  .uploadrow { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:4px; }
+  .uploadrow input[type=file] { flex:1 1 240px; padding:7px; }
+  .uploadinfo { margin-top:6px; color:var(--muted); font-size:12px; }
+  .resultcard { border:1px solid var(--line); border-radius:8px; padding:10px; background:var(--panel2); color:var(--text); line-height:1.45; }
+  .foldbox { margin-top:12px; padding:0; border:1px solid var(--line); border-radius:9px; background:var(--panel2); overflow:hidden; }
+  .foldbox > summary { padding:11px 13px; font-weight:700; color:var(--text); background:#1b222c; }
+  .foldcontent { padding:12px; }
+  .foldbox[open] > summary { border-bottom:1px solid var(--line); }
+  .chatlog { max-height:260px; overflow:auto; display:flex; flex-direction:column; gap:8px; margin:8px 0 10px; }
+  .chatmsg { padding:8px 10px; border-radius:8px; white-space:pre-wrap; line-height:1.35; font-size:13px; }
+  .chatuser { background:#263241; align-self:flex-end; max-width:90%; }
+  .chatai { background:#151c24; border:1px solid #2d3846; align-self:flex-start; max-width:90%; color:var(--text); }
+  .chatrow { display:flex; gap:8px; align-items:flex-end; }
+  .chatrow textarea { flex:1; min-height:60px; }
+  .historyitem { border:1px solid var(--line); border-radius:8px; padding:9px; background:var(--panel2); color:var(--text); margin-bottom:8px; }
+  .historymeta { color:var(--muted); font-size:12px; margin-top:3px; }
+  .costmeta { color:#cbd4df; font-size:12px; margin-top:5px; }
+  .historyactions { display:flex; gap:6px; flex-wrap:wrap; margin-top:7px; }
+  @media (max-width:900px){ main{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+<header><h1>AI MIDI Composer – Universal Studio</h1></header>
+<main>
+  <section class="panel">
+    <label for="provider">Modell-Anbieter</label>
+    <select id="provider">
+      <option value="gemini">Google / Gemini (3.7 Flash)</option>
+      <option value="anthropic">Anthropic / Claude (Sonnet 5)</option>
+      <option value="openai">OpenAI (Sol / GPT-5.6)</option>
+    </select>
+
+    <label for="model">Modellname</label>
+    <input id="model" value="gemini-3.7-flash">
+
+    <label for="apiKey">API-Key für gewählten Anbieter</label>
+    <div style="display:flex; gap:6px;">
+      <input id="apiKey" type="password" placeholder="API-Key eintragen">
+      <button type="button" id="toggleKeyBtn" class="secondary smallbtn" style="flex:0 0 auto;">👁</button>
+    </div>
+    <div class="keyrow">
+      <label class="checklabel"><input id="rememberApiKey" type="checkbox" checked> Eingaben &amp; Keys auf diesem Gerät merken</label>
+      <button type="button" class="secondary smallbtn" id="saveKeyBtn">💾 Jetzt speichern</button>
+      <button type="button" class="secondary smallbtn" id="clearApiKeyBtn">🗑 Key löschen</button>
+    </div>
+
+    <div class="row">
+      <div>
+        <label for="measures">Takte</label>
+        <input id="measures" type="number" min="1" max="256" value="32">
+      </div>
+      <div>
+        <label for="meter">Taktart</label>
+        <input id="meter" value="4/4">
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label for="tempo">Tempo (BPM)</label>
+        <input id="tempo" type="number" min="20" max="300" value="96">
+      </div>
+      <div>
+        <label for="key">Tonart</label>
+        <input id="key" value="e minor">
+      </div>
+    </div>
+
+    <label for="ensemble">Besetzung</label>
+    <input id="ensemble" value="Piano solo">
+
+    <label for="prompt">Kompositionsauftrag</label>
+    <textarea id="prompt">Komponiere ein eigenständiges, musikalisch überzeugendes Stück. Entwickle einen klar erkennbaren musikalischen Gedanken mit abwechslungsreicher Dynamik und Artikulation.</textarea>
+
+    <label>Vorhandenes Material hochladen (MIDI oder JSON)</label>
+    <div class="uploadrow">
+      <input id="uploadInput" type="file" accept=".mid,.midi,.json,application/json,audio/midi">
+      <button type="button" class="secondary smallbtn" id="clearUploadBtn">Entfernen</button>
+    </div>
+    <div class="uploadinfo" id="uploadInfo">Kein Material geladen.</div>
+
+    <button class="primary" id="composeBtn">Mit gewählter KI komponieren</button>
+  </section>
+
+  <section class="panel">
+    <div class="toolbar">
+      <button class="secondary" id="downloadBtn" disabled>MIDI herunterladen</button>
+      <button class="secondary" id="jsonBtn" disabled>JSON herunterladen</button>
+    </div>
+    <div class="status" id="status">Bereit.</div>
+
+    <details class="foldbox" id="conceptSection" open>
+      <summary>Musikalischer Impuls</summary>
+      <div class="foldcontent">
+        <div id="conceptView" class="resultcard">Noch kein Entwurf.</div>
+      </div>
+    </details>
+
+    <h3>Aktuelle Komposition</h3>
+    <div id="lastResult" class="resultcard">Noch keine Komposition.</div>
+
+    <details class="foldbox" id="chatSection" open>
+      <summary>Mit der KI chatten & weiterbearbeiten</summary>
+      <div class="foldcontent">
+        <div id="chatContext" class="historyitem">Keine Komposition aktiv.</div>
+        <div id="chatLog" class="chatlog"><div class="chatai chatmsg">Stelle hier Fragen zum Stück oder gib Anweisungen wie z.B. „Mache Takt 5 bis 8 dramatischer“ oder „Verlängere um 8 Takte“.</div></div>
+        <div class="chatrow">
+          <textarea id="chatInput" placeholder="Frage oder Änderungswunsch eingeben …"></textarea>
+          <button id="chatSendBtn" class="secondary" type="button">Senden</button>
+        </div>
+      </div>
+    </details>
+
+    <details class="foldbox" id="validationSection">
+      <summary>Technische Analyse & Validierung</summary>
+      <div class="foldcontent">
+        <pre id="validation">Noch keine Komposition geprüft.</pre>
+      </div>
+    </details>
+
+    <details class="foldbox" id="historySection" open>
+      <summary>Verlauf (Dauerhaft gespeichert)</summary>
+      <div class="foldcontent">
+        <div class="toolbar" style="margin-top:0">
+          <button type="button" class="secondary smallbtn" id="clearHistoryBtn">Verlauf leeren</button>
+        </div>
+        <div id="historyList">Noch kein Verlauf vorhanden.</div>
+      </div>
+    </details>
+  </section>
+</main>
+
+<script>
+'use strict';
+
+const STORAGE_ID = "ai_midi_composer_settings_v36";
+const HISTORY_ID = "ai_midi_composer_history_v36";
+
+const DEFAULT_MODELS = {
+  gemini: "gemini-3.7-flash",
+  anthropic: "claude-sonnet-5",
+  openai: "gpt-5.6-sol"
+};
+
+const TOKEN_RATES = {
+  "claude-sonnet-5": {in:2.00, out:10.00},
+  "gemini-3.7-flash": {in:0.75, out:3.75},
+  "gpt-5.6-sol": {in:2.00, out:10.00},
+  "gpt-5.6": {in:2.00, out:10.00}
+};
+
+const SYSTEM_PREFIX = `Du bist ein Kompositions- und Produktionsassistent für MIDI.
+Erfinde selbständige, geschlossene Musik nach dem Auftrag des Nutzers. Achte auf Stimmführung, Dynamik (Velocity 1-127), Rhythmik und Artikulation.`;
+
+const TECHNICAL_PROMPT = `NOTATION UND AUSGABE:
+- "d" = Notierter Wert in Viertelnoten-Beats (0.125, 0.25, 0.333333, 0.5, 0.666667, 0.75, 1, 1.5, 2, 3, 4, 6, 8).
+- "g" = Gate/Klingdauer als Faktor (z.B. 0.95 = normal, 0.5 = staccato, 1.05 = legato).
+- "st" = System (0=Standard, 1=Rechte Hand / oberes System, 2=Linke Hand / unteres System).
+- Format: JSON mit folgender Struktur:
+{
+  "ti": "Titel",
+  "bpm": 96,
+  "ts": {"n": 4, "d": 4},
+  "k": "e minor",
+  "sm": "Kurze Zusammenfassung",
+  "tr": [
+    {
+      "nm": "Piano",
+      "ch": 0,
+      "pg": 0,
+      "nt": [[0.0, 1.0, 60, 80, 1]],
+      "ct": [[0.0, 64, 0]]
+    }
+  ]
+}
+nt-Array: [StartBeat, Dauer, Pitch, Velocity, Staff, Gate] (Gate ist optional, Standard 0.95).
+ct-Array: [Beat, CC, Wert].
+Gib ausschließlich valides JSON aus.`;
+
+let lastScore = null;
+let lastMidiBytes = null;
+let lastProvider = null;
+let lastModel = null;
+let uploadedScore = null;
+let uploadedName = "";
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s??"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+function getStoredData(){
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_ID) || "{}");
+  } catch(_) {
+    return {};
+  }
+}
+
+function syncUIForProvider(p){
+  const data = getStoredData();
+  $("model").value = DEFAULT_MODELS[p] || "";
+  $("apiKey").value = (data.remember !== false && data.keys?.[p]) ? data.keys[p] : "";
+  renderChatContext();
+}
+
+function saveCurrentState(){
+  try {
+    const data = getStoredData();
+    const p = $("provider").value;
+    data.provider = p;
+    data.remember = $("rememberApiKey").checked;
+    
+    // API-Keys
+    data.keys = data.keys || {};
+    if(data.remember && $("apiKey").value.trim()){
+      data.keys[p] = $("apiKey").value.trim();
+    } else if(!data.remember) {
+      delete data.keys[p];
+    }
+
+    // Eingabefelder speichern
+    data.form = {
+      measures: $("measures").value,
+      meter: $("meter").value,
+      tempo: $("tempo").value,
+      key: $("key").value,
+      ensemble: $("ensemble").value,
+      prompt: $("prompt").value
+    };
+
+    localStorage.setItem(STORAGE_ID, JSON.stringify(data));
+  } catch(_) {}
+}
+
+function initApp(){
+  const data = getStoredData();
+  const p = data.provider || "gemini";
+  $("provider").value = p;
+  $("rememberApiKey").checked = data.remember !== false;
+  
+  // Gespeicherte Formularwerte wiederherstellen
+  if(data.form){
+    if(data.form.measures) $("measures").value = data.form.measures;
+    if(data.form.meter) $("meter").value = data.form.meter;
+    if(data.form.tempo) $("tempo").value = data.form.tempo;
+    if(data.form.key) $("key").value = data.form.key;
+    if(data.form.ensemble) $("ensemble").value = data.form.ensemble;
+    if(data.form.prompt) $("prompt").value = data.form.prompt;
+  }
+
+  syncUIForProvider(p);
+  renderHistory();
+}
+
+$("provider").addEventListener("change", (e) => {
+  const p = e.target.value;
+  syncUIForProvider(p);
+  saveCurrentState();
+});
+
+// Autosave auf allen Eingabefeldern
+["apiKey", "measures", "meter", "tempo", "key", "ensemble", "prompt"].forEach(id => {
+  $(id).addEventListener("input", saveCurrentState);
+  $(id).addEventListener("change", saveCurrentState);
+});
+$("rememberApiKey").addEventListener("change", saveCurrentState);
+
+$("saveKeyBtn").addEventListener("click", () => {
+  saveCurrentState();
+  const p = $("provider").value.toUpperCase();
+  $("status").innerHTML = `<span class="ok">Alle Eingaben &amp; API-Key für ${esc(p)} erfolgreich gespeichert.</span>`;
+});
+
+$("clearApiKeyBtn").addEventListener("click", () => {
+  const p = $("provider").value;
+  $("apiKey").value = "";
+  const data = getStoredData();
+  if(data.keys?.[p]) {
+    delete data.keys[p];
+    localStorage.setItem(STORAGE_ID, JSON.stringify(data));
+  }
+  $("status").textContent = `Schlüssel für ${p.toUpperCase()} gelöscht.`;
+});
+
+$("toggleKeyBtn").addEventListener("click", () => {
+  $("apiKey").type = $("apiKey").type === "password" ? "text" : "password";
+});
+
+// --- MIDI Upload Parser ---
+function readVLQ(bytes, pos){
+  let val = 0, b;
+  do {
+    if(pos.i >= bytes.length) throw new Error("MIDI EOF");
+    b = bytes[pos.i++];
+    val = (val << 7) | (b & 0x7f);
+  } while(b & 0x80);
+  return val;
+}
+
+function parseUploadedMidi(buffer){
+  const bytes = new Uint8Array(buffer), dv = new DataView(buffer);
+  if(String.fromCharCode(...bytes.slice(0,4)) !== "MThd") throw new Error("Keine gültige MIDI-Datei");
+  const ntrks = dv.getUint16(10), ppq = dv.getUint16(12);
+  let off = 8 + dv.getUint32(4);
+  const tracks = [];
+  let tempo = 96, ts = {n:4, d:4}, title = "Upload";
+
+  for(let t=0; t<ntrks; t++){
+    if(String.fromCharCode(...bytes.slice(off, off+4)) !== "MTrk") break;
+    const len = dv.getUint32(off+4), end = off + 8 + len;
+    let i = off + 8, tick = 0, run = null;
+    const active = new Map(), notes = [], controls = [];
+    let trkName = `Track ${t+1}`;
+
+    while(i < end){
+      const pos = {i}; const delta = readVLQ(bytes, pos); i = pos.i; tick += delta;
+      let status = bytes[i++];
+      if(status < 0x80){ i--; status = run; } else if(status < 0xf0){ run = status; }
+      if(status === 0xff){
+        const type = bytes[i++], posL = {i}, l = readVLQ(bytes, posL); i = posL.i;
+        const data = bytes.slice(i, i+l); i += l;
+        if(type === 0x03) trkName = new TextDecoder().decode(data);
+        if(type === 0x51 && l === 3) tempo = Math.round(60000000 / ((data[0]<<16)|(data[1]<<8)|data[2]));
+        if(type === 0x58 && l >= 2) ts = {n:data[0], d:2**data[1]};
+        continue;
+      }
+      const type = status & 0xf0, ch = status & 0x0f;
+      const d1 = bytes[i++], d2 = (type === 0xc0 || type === 0xd0) ? 0 : bytes[i++];
+      const beat = +(tick / ppq).toFixed(4);
+      if(type === 0xb0 && d1 === 64) controls.push([beat, 64, d2]);
+      else if(type === 0x90 && d2 > 0){
+        const arr = active.get(d1) || [];
+        arr.push({beat, vel:d2});
+        active.set(d1, arr);
+      } else if(type === 0x80 || (type === 0x90 && d2 === 0)){
+        const arr = active.get(d1) || [];
+        const on = arr.shift();
+        if(on) notes.push([on.beat, +(beat - on.beat).toFixed(4), d1, on.vel, 0, 1.0]);
+      }
+    }
+    if(notes.length || controls.length) tracks.push({nm:trkName, ch:0, pg:0, nt:notes, ct:controls});
+    off = end;
+  }
+  return {ti:title, bpm:tempo, ts, k:"unknown", sm:"Hochgeladene Datei", tr:tracks};
+}
+
+$("uploadInput").addEventListener("change", async e => {
+  const f = e.target.files?.[0];
+  if(!f) return;
+  try {
+    uploadedName = f.name;
+    if(f.name.endsWith(".json") || f.type === "application/json"){
+      uploadedScore = JSON.parse(await f.text());
+    } else {
+      uploadedScore = parseUploadedMidi(await f.arrayBuffer());
+    }
+    const count = (uploadedScore.tr||[]).reduce((s,t)=>s+(t.nt?.length||0), 0);
+    $("uploadInfo").textContent = `Geladen: ${f.name} (${count} Noten)`;
+    $("status").textContent = "Material geladen. Wird als Referenz mitgesendet.";
+  } catch(err) {
+    uploadedScore = null;
+    $("uploadInfo").textContent = "Fehler beim Lesen des Uploads.";
+    $("status").innerHTML = `<span class="err">${esc(err.message)}</span>`;
+  }
+});
+
+$("clearUploadBtn").addEventListener("click", () => {
+  uploadedScore = null;
+  $("uploadInput").value = "";
+  $("uploadInfo").textContent = "Kein Material geladen.";
+});
+
+// --- API Router ---
+async function callLLM(provider, model, apiKey, systemPrompt, userPrompt, wantJson = false){
+  if(provider === "anthropic"){
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method:"POST",
+      headers:{
+        "content-type":"application/json",
+        "x-api-key":apiKey,
+        "anthropic-version":"2023-06-01",
+        "anthropic-dangerous-direct-browser-access":"true"
+      },
+      body:JSON.stringify({
+        model,
+        max_tokens:32000,
+        system:systemPrompt,
+        messages:[{role:"user", content:userPrompt}]
+      })
+    });
+    const data = await r.json();
+    if(!r.ok) throw new Error(data?.error?.message || `Anthropic HTTP ${r.status}`);
+    const text = data.content?.filter(x=>x.type==="text").map(x=>x.text).join("") || "";
+    return {text, usage:{in:data.usage?.input_tokens||0, out:data.usage?.output_tokens||0}};
+  }
+  if(provider === "gemini"){
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const cfg = {
+      maxOutputTokens:32000,
+      thinkingConfig:{thinkingLevel:"MEDIUM"}
+    };
+    if(wantJson) cfg.responseMimeType = "application/json";
+
+    const r = await fetch(url, {
+      method:"POST",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify({
+        system_instruction:{parts:[{text:systemPrompt}]},
+        contents:[{role:"user", parts:[{text:userPrompt}]}],
+        generationConfig:cfg
+      })
+    });
+    const data = await r.json();
+    if(!r.ok) throw new Error(data?.error?.message || `Gemini HTTP ${r.status}`);
+    const text = data.candidates?.[0]?.content?.parts?.map(x=>x.text||"").join("") || "";
+    return {text, usage:{in:data.usageMetadata?.promptTokenCount||0, out:data.usageMetadata?.candidatesTokenCount||0}};
+  }
+  if(provider === "openai"){
+    const reqBody = {
+      model,
+      messages:[{role:"system", content:systemPrompt}, {role:"user", content:userPrompt}]
+    };
+    if(wantJson){
+      reqBody.response_format = {type:"json_object"};
+    }
+    const r = await fetch("https://api.openai.com/v1/chat/completions", {
+      method:"POST",
+      headers:{"content-type":"application/json", "authorization":`Bearer ${apiKey}`},
+      body:JSON.stringify(reqBody)
+    });
+    const data = await r.json();
+    if(!r.ok) throw new Error(data?.error?.message || `OpenAI HTTP ${r.status}`);
+    const text = data.choices?.[0]?.message?.content || "";
+    return {text, usage:{in:data.usage?.prompt_tokens||0, out:data.usage?.completion_tokens||0}};
+  }
+}
+
+function extractJSON(str){
+  str = str.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  const s = str.indexOf("{"), e = str.lastIndexOf("}");
+  if(s < 0 || e < s) throw new Error("Kein valides JSON in Modellantwort gefunden.");
+  return JSON.parse(str.slice(s, e+1));
+}
+
+// --- MIDI Builder ---
+function vlq(v){
+  v = Math.max(0, Math.round(v)); let buf = v & 0x7f, out = [];
+  while((v >>= 7)){ buf <<= 8; buf |= ((v & 0x7f) | 0x80); }
+  while(true){ out.push(buf & 0xff); if(buf & 0x80) buf >>= 8; else break; }
+  return out;
+}
+function u16(n){ return [(n>>8)&255, n&255]; }
+function u32(n){ return [(n>>24)&255, (n>>16)&255, (n>>8)&255, n&255]; }
+function strB(s){ return Array.from(new TextEncoder().encode(s)); }
+
+function buildMidi(score){
+  const PPQ = 480, tracks = [];
+  const tempo = Math.max(20, Math.min(300, +score.bpm || 96));
+  const ts = score.ts || {n:4, d:4};
+  
+  const cond = [];
+  const mpqn = Math.round(60000000 / tempo);
+  cond.push({t:0, b:[0xff,0x51,0x03,(mpqn>>16)&255,(mpqn>>8)&255,mpqn&255]});
+  cond.push({t:0, b:[0xff,0x58,0x04,+ts.n||4,Math.round(Math.log2(+ts.d||4)),24,8]});
+  cond.push({t:0, b:[0xff,0x03,...vlq(strB(score.ti||"Composition").length),...strB(score.ti||"Composition")]});
+  tracks.push(encodeMTrk(cond));
+
+  (score.tr || []).forEach((tr, idx) => {
+    const ch = Math.min(15, +tr.ch || 0);
+    const ev = [];
+    ev.push({t:0, b:[0xff,0x03,...vlq(strB(tr.nm||`Track ${idx+1}`).length),...strB(tr.nm||`Track ${idx+1}`)]});
+    ev.push({t:0, b:[0xc0|ch, Math.max(0, Math.min(127, +tr.pg||0))]});
+
+    for(const c of (tr.ct||[])){
+      ev.push({t:Math.round(+c[0]*PPQ), b:[0xb0|ch, Math.min(127,+c[1]), Math.min(127,+c[2])]});
+    }
+    for(const n of (tr.nt||[])){
+      const start = Math.round(+n[0]*PPQ);
+      const gate = Number.isFinite(+n[5]) ? +n[5] : 0.95;
+      const end = Math.max(start+1, Math.round((+n[0] + (+n[1]*gate))*PPQ));
+      const p = Math.max(0, Math.min(127, Math.round(+n[2])));
+      const v = Math.max(1, Math.min(127, Math.round(+n[3]||80)));
+      ev.push({t:start, b:[0x90|ch, p, v]});
+      ev.push({t:end, b:[0x80|ch, p, 0]});
+    }
+    tracks.push(encodeMTrk(ev));
+  });
+
+  const header = [...strB("MThd"), ...u32(6), ...u16(1), ...u16(tracks.length), ...u16(PPQ)];
+  return new Uint8Array([...header, ...tracks.flat()]);
+}
+
+function encodeMTrk(events){
+  events.sort((a,b)=>a.t-b.t);
+  let last = 0, data = [];
+  for(const e of events){
+    data.push(...vlq(e.t - last), ...e.b);
+    last = e.t;
+  }
+  data.push(0, 0xff, 0x2f, 0);
+  return [...strB("MTrk"), ...u32(data.length), ...data];
+}
+
+function downloadBlob(data, name, type){
+  if (window.AndroidBridge && window.AndroidBridge.saveBlob) {
+    const reader = new FileReader();
+    reader.onloadend = () => window.AndroidBridge.saveBlob(reader.result, name, type);
+    reader.readAsDataURL(new Blob([data], {type}));
+    return;
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([data], {type}));
+  a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 500);
+}
+
+// --- Kompositions-Logik ---
+async function compose(){
+  saveCurrentState();
+  const provider = $("provider").value;
+  const model = $("model").value.trim();
+  const key = $("apiKey").value.trim();
+  if(!key){ $("status").innerHTML = `<span class="err">Bitte API-Key für ${provider.toUpperCase()} eingeben.</span>`; return; }
+
+  $("composeBtn").disabled = true;
+  $("status").textContent = "Entwickle musikalischen Impuls …";
+
+  try {
+    let promptText = `Besetzung: ${$("ensemble").value}\nTakte: ${$("measures").value}\nTaktart: ${$("meter").value}\nTempo: ${$("tempo").value} BPM\nTonart: ${$("key").value}\n\nAuftrag:\n${$("prompt").value}`;
+    if(uploadedScore){
+      promptText += `\n\nVORHANDENES MATERIAL (${uploadedName}):\n` + JSON.stringify(uploadedScore);
+    }
+
+    const conceptRes = await callLLM(provider, model, key, SYSTEM_PREFIX, `Formuliere einen kurzen musikalischen Gedanken/Impuls für folgenden Auftrag:\n\n${promptText}`, false);
+    $("conceptView").innerHTML = `<strong>${esc(provider.toUpperCase())} Konzept:</strong><br>${esc(conceptRes.text).replace(/\n/g,"<br>")}`;
+
+    $("status").textContent = "Komponiere MIDI-Partitur …";
+    const compPrompt = `${TECHNICAL_PROMPT}\n\nAUFTRAG:\n${promptText}\n\nDEIN KONZEPT:\n${conceptRes.text}\n\nGib jetzt die fertige JSON-Partitur aus.`;
+    const scoreRes = await callLLM(provider, model, key, SYSTEM_PREFIX, compPrompt, true);
+    const score = extractJSON(scoreRes.text);
+
+    lastScore = score;
+    lastProvider = provider;
+    lastModel = model;
+    lastMidiBytes = buildMidi(score);
+
+    $("downloadBtn").disabled = false;
+    $("jsonBtn").disabled = false;
+    
+    const rate = TOKEN_RATES[model] || {in:1.0, out:4.0};
+    const cost = ((scoreRes.usage.in * rate.in + scoreRes.usage.out * rate.out) / 1000000).toFixed(4);
+    
+    $("lastResult").innerHTML = `<strong>${esc(score.ti || "Komposition")}</strong><br>${esc(score.bpm)} BPM · ${esc(score.k || "")} · ${esc(score.tr?.length||1)} Spur(en)<br><small>${esc(score.sm || "")}</small><div class="costmeta">Tokens: ${scoreRes.usage.in} In / ${scoreRes.usage.out} Out (ca. $${cost})</div>`;
+
+    validateScore(score);
+    renderChatContext();
+    addHistory(score, provider, model);
+    $("status").innerHTML = '<span class="ok">Komposition erfolgreich abgeschlossen!</span>';
+  } catch(err) {
+    $("status").innerHTML = `<span class="err">Fehler: ${esc(err.message)}</span>`;
+  } finally {
+    $("composeBtn").disabled = false;
+  }
+}
+
+function validateScore(score){
+  const issues = [];
+  let noteCount = 0;
+  (score.tr||[]).forEach((t, ti) => {
+    noteCount += t.nt?.length || 0;
+    (t.nt||[]).forEach((n, ni) => {
+      if(n[2] < 0 || n[2] > 127) issues.push(`Spur ${ti+1}, Note ${ni+1}: Pitch ${n[2]} ungültig`);
+    });
+  });
+  $("validation").textContent = `Geprüfte Noten: ${noteCount}\nSpuren: ${score.tr?.length||0}\n` + (issues.length ? "Warnungen:\n- " + issues.join("\n- ") : "Keine technischen MIDI-Fehler.");
+}
+
+// --- Chat & Revision ---
+function renderChatContext(){
+  $("chatContext").innerHTML = lastScore 
+    ? `Aktives Stück: <strong>${esc(lastScore.ti||"Unbenannt")}</strong> (mit ${$("provider").value.toUpperCase()})` 
+    : "Noch kein aktives Stück geladen.";
+}
+
+async function sendChat(){
+  const msg = $("chatInput").value.trim();
+  if(!msg || !lastScore) return;
+  const key = $("apiKey").value.trim();
+  const provider = $("provider").value;
+  const model = $("model").value.trim();
+  if(!key){ alert("Bitte API-Key eingeben."); return; }
+
+  appendChat("user", msg);
+  $("chatInput").value = "";
+  $("status").textContent = "KI überarbeitet Partitur …";
+
+  try {
+    const chatPrompt = `${TECHNICAL_PROMPT}\n\nAKTUELLE PARTITUR (JSON):\n${JSON.stringify(lastScore)}\n\nNUTZER-ANWEISUNG / FRAGE:\n${msg}\n\nAntworte mit einem JSON-Objekt im Format: {"reply":"Deine Textantwort", "score": null ODER modifizierte Partitur falls Noten geändert wurden}`;
+    const res = await callLLM(provider, model, key, SYSTEM_PREFIX, chatPrompt, true);
+    const envelope = extractJSON(res.text);
+
+    appendChat("ai", envelope.reply || "Änderung umgesetzt.");
+    if(envelope.score){
+      lastScore = envelope.score;
+      lastMidiBytes = buildMidi(lastScore);
+      $("lastResult").innerHTML = `<strong>${esc(lastScore.ti)} (Überarbeitet)</strong>`;
+      validateScore(lastScore);
+      addHistory(lastScore, provider, model);
+    }
+    $("status").innerHTML = '<span class="ok">Antwort erhalten.</span>';
+  } catch(err) {
+    appendChat("ai", "Fehler: " + err.message);
+    $("status").innerHTML = `<span class="err">${esc(err.message)}</span>`;
+  }
+}
+
+function appendChat(role, text){
+  const d = document.createElement("div");
+  d.className = `chatmsg chat${role}`;
+  d.textContent = (role==="user"?"Du: ":"KI: ") + text;
+  $("chatLog").appendChild(d);
+  $("chatLog").scrollTop = $("chatLog").scrollHeight;
+}
+
+// --- Robuste Verlaufs-Speicherung ---
+function addHistory(score, provider, model){
+  try {
+    let h = [];
+    try { h = JSON.parse(localStorage.getItem(HISTORY_ID) || "[]"); } catch(_) { h = []; }
+    
+    h.unshift({
+      id: Date.now(),
+      time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'}),
+      title: score.ti || "Komposition",
+      score: score,
+      provider: provider,
+      model: model
+    });
+
+    if (h.length > 15) h = h.slice(0, 15);
+
+    localStorage.setItem(HISTORY_ID, JSON.stringify(h));
+  } catch(err) {
+    console.warn("Konnte Verlauf nicht im LocalStorage speichern:", err);
+  }
+  renderHistory();
+}
+
+function renderHistory(){
+  let h = [];
+  try {
+    h = JSON.parse(localStorage.getItem(HISTORY_ID) || "[]");
+  } catch(_) {
+    h = [];
+  }
+
+  const box = $("historyList");
+  if(!h || !h.length){
+    box.innerHTML = '<span style="color:var(--muted); font-size:13px;">Noch kein Verlauf vorhanden. Komponierte Stücke erscheinen hier dauerhaft.</span>';
+    return;
+  }
+
+  box.innerHTML = "";
+  h.forEach((item) => {
+    const d = document.createElement("div");
+    d.className = "historyitem";
+    
+    const count = (item.score?.tr || []).reduce((sum, trk) => sum + (trk.nt?.length || 0), 0);
+    const bpm = item.score?.bpm || 96;
+    const key = item.score?.k || "";
+
+    d.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <strong>${esc(item.title)}</strong>
+        <span style="font-size:11px; color:var(--muted);">${esc(item.time)}</span>
+      </div>
+      <div class="historymeta">${esc(item.provider.toUpperCase())} (${esc(item.model)}) · ${bpm} BPM ${key ? '· '+esc(key) : ''} · ${count} Noten</div>
+      <div class="historyactions">
+        <button class="secondary smallbtn" data-act="load">📥 In Editor laden</button>
+        <button class="secondary smallbtn" data-act="midi">🎵 MIDI (.mid)</button>
+        <button class="secondary smallbtn" data-act="json">📋 JSON</button>
+      </div>
+    `;
+
+    d.querySelector('[data-act="load"]').onclick = () => {
+      lastScore = item.score;
+      lastProvider = item.provider;
+      lastModel = item.model;
+      lastMidiBytes = buildMidi(item.score);
+      $("downloadBtn").disabled = false;
+      $("jsonBtn").disabled = false;
+      $("lastResult").innerHTML = `<strong>${esc(item.score.ti || "Komposition")} (aus Verlauf)</strong><br>${esc(item.score.bpm)} BPM · ${esc(item.score.k || "")} · ${esc(item.score.tr?.length||1)} Spur(en)`;
+      renderChatContext();
+      validateScore(item.score);
+      $("status").innerHTML = `<span class="ok">„${esc(item.title)}“ aus dem Verlauf geladen.</span>`;
+    };
+
+    d.querySelector('[data-act="midi"]').onclick = () => {
+      const bytes = buildMidi(item.score);
+      downloadBlob(bytes, `${item.title.replace(/[^a-z0-9_-]/gi,'_')}.mid`, "audio/midi");
+    };
+
+    d.querySelector('[data-act="json"]').onclick = () => {
+      downloadBlob(JSON.stringify(item.score, null, 2), `${item.title.replace(/[^a-z0-9_-]/gi,'_')}.json`, "application/json");
+    };
+
+    box.appendChild(d);
+  });
+}
+
+$("clearHistoryBtn").onclick = () => {
+  if(confirm("Möchtest du den gesamten Verlauf wirklich leeren?")){
+    localStorage.removeItem(HISTORY_ID);
+    renderHistory();
+    $("status").textContent = "Verlauf geleert.";
+  }
+};
+
+$("composeBtn").onclick = compose;
+$("chatSendBtn").onclick = sendChat;
+$("chatInput").onkeydown = e => { if(e.key==="Enter" && (e.ctrlKey||e.metaKey)) sendChat(); };
+$("downloadBtn").onclick = () => lastMidiBytes && downloadBlob(lastMidiBytes, `${lastScore?.ti||"composition"}.mid`, "audio/midi");
+$("jsonBtn").onclick = () => lastScore && downloadBlob(JSON.stringify(lastScore,null,2), `${lastScore?.ti||"composition"}.json`, "application/json");
+
+initApp();
+</script>
+</body>
+</html>
