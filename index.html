@@ -168,8 +168,8 @@
 <script>
 'use strict';
 
-const STORAGE_ID = "ai_midi_composer_settings_v32";
-const HISTORY_ID = "ai_midi_composer_history_v32";
+const STORAGE_ID = "ai_midi_composer_settings_v33";
+const HISTORY_ID = "ai_midi_composer_history_v33";
 
 const DEFAULT_MODELS = {
   gemini: "gemini-3.7-flash",
@@ -191,7 +191,7 @@ const TECHNICAL_PROMPT = `NOTATION UND AUSGABE:
 - "d" = Notierter Wert in Viertelnoten-Beats (0.125, 0.25, 0.333333, 0.5, 0.666667, 0.75, 1, 1.5, 2, 3, 4, 6, 8).
 - "g" = Gate/Klingdauer als Faktor (z.B. 0.95 = normal, 0.5 = staccato, 1.05 = legato).
 - "st" = System (0=Standard, 1=Rechte Hand / oberes System, 2=Linke Hand / unteres System).
-- Format: JSON mit Array-Struktur:
+- Format: JSON mit folgender Struktur:
 {
   "ti": "Titel",
   "bpm": 96,
@@ -210,7 +210,7 @@ const TECHNICAL_PROMPT = `NOTATION UND AUSGABE:
 }
 nt-Array: [StartBeat, Dauer, Pitch, Velocity, Staff, Gate] (Gate ist optional, Standard 0.95).
 ct-Array: [Beat, CC, Wert].
-Gib ausschließlich reines JSON ohne Markdown-Codeblöcke aus.`;
+Gib ausschließlich valides JSON aus.`;
 
 let lastScore = null;
 let lastMidiBytes = null;
@@ -232,9 +232,7 @@ function getStoredData(){
 
 function syncUIForProvider(p){
   const data = getStoredData();
-  // Modellname immer passend zum gewählten Anbieter setzen
   $("model").value = DEFAULT_MODELS[p] || "";
-  // Gespeicherten Key für diesen Anbieter laden (falls vorhanden)
   $("apiKey").value = (data.remember !== false && data.keys?.[p]) ? data.keys[p] : "";
   renderChatContext();
 }
@@ -263,7 +261,6 @@ function initApp(){
   syncUIForProvider(p);
 }
 
-// Direkte Umschaltung bei Auswahl im Dropdown
 $("provider").addEventListener("change", (e) => {
   const p = e.target.value;
   syncUIForProvider(p);
@@ -379,7 +376,7 @@ $("clearUploadBtn").addEventListener("click", () => {
 });
 
 // --- API Router ---
-async function callLLM(provider, model, apiKey, systemPrompt, userPrompt){
+async function callLLM(provider, model, apiKey, systemPrompt, userPrompt, wantJson = false){
   if(provider === "anthropic"){
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method:"POST",
@@ -403,17 +400,19 @@ async function callLLM(provider, model, apiKey, systemPrompt, userPrompt){
   }
   if(provider === "gemini"){
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const cfg = {
+      maxOutputTokens:32000,
+      thinkingConfig:{thinkingLevel:"MEDIUM"}
+    };
+    if(wantJson) cfg.responseMimeType = "application/json";
+
     const r = await fetch(url, {
       method:"POST",
       headers:{"content-type":"application/json"},
       body:JSON.stringify({
         system_instruction:{parts:[{text:systemPrompt}]},
         contents:[{role:"user", parts:[{text:userPrompt}]}],
-        generationConfig:{
-          maxOutputTokens:32000,
-          thinkingConfig:{thinkingLevel:"MEDIUM"},
-          responseMimeType: "application/json"
-        }
+        generationConfig:cfg
       })
     });
     const data = await r.json();
@@ -422,14 +421,17 @@ async function callLLM(provider, model, apiKey, systemPrompt, userPrompt){
     return {text, usage:{in:data.usageMetadata?.promptTokenCount||0, out:data.usageMetadata?.candidatesTokenCount||0}};
   }
   if(provider === "openai"){
+    const reqBody = {
+      model,
+      messages:[{role:"system", content:systemPrompt}, {role:"user", content:userPrompt}]
+    };
+    if(wantJson){
+      reqBody.response_format = {type:"json_object"};
+    }
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method:"POST",
       headers:{"content-type":"application/json", "authorization":`Bearer ${apiKey}`},
-      body:JSON.stringify({
-        model,
-        messages:[{role:"system", content:systemPrompt}, {role:"user", content:userPrompt}],
-        response_format:{type:"json_object"}
-      })
+      body:JSON.stringify(reqBody)
     });
     const data = await r.json();
     if(!r.ok) throw new Error(data?.error?.message || `OpenAI HTTP ${r.status}`);
@@ -534,12 +536,14 @@ async function compose(){
       promptText += `\n\nVORHANDENES MATERIAL (${uploadedName}):\n` + JSON.stringify(uploadedScore);
     }
 
-    const conceptRes = await callLLM(provider, model, key, SYSTEM_PREFIX, `Formuliere einen kurzen musikalischen Gedanken/Impuls für folgenden Auftrag:\n\n${promptText}`);
+    // Phase 1: Konzept (reiner Text, kein JSON-Modus)
+    const conceptRes = await callLLM(provider, model, key, SYSTEM_PREFIX, `Formuliere einen kurzen musikalischen Gedanken/Impuls für folgenden Auftrag:\n\n${promptText}`, false);
     $("conceptView").innerHTML = `<strong>${esc(provider.toUpperCase())} Konzept:</strong><br>${esc(conceptRes.text).replace(/\n/g,"<br>")}`;
 
+    // Phase 2: Komposition (JSON-Modus)
     $("status").textContent = "Komponiere MIDI-Partitur …";
     const compPrompt = `${TECHNICAL_PROMPT}\n\nAUFTRAG:\n${promptText}\n\nDEIN KONZEPT:\n${conceptRes.text}\n\nGib jetzt die fertige JSON-Partitur aus.`;
-    const scoreRes = await callLLM(provider, model, key, SYSTEM_PREFIX, compPrompt);
+    const scoreRes = await callLLM(provider, model, key, SYSTEM_PREFIX, compPrompt, true);
     const score = extractJSON(scoreRes.text);
 
     lastScore = score;
@@ -598,8 +602,8 @@ async function sendChat(){
   $("status").textContent = "KI überarbeitet Partitur …";
 
   try {
-    const chatPrompt = `${TECHNICAL_PROMPT}\n\nAKTUELLE PARTITUR:\n${JSON.stringify(lastScore)}\n\nNUTZER-ANWEISUNG / FRAGE:\n${msg}\n\nAntworte mit einem JSON-Objekt im Format: {"reply":"Deine Textantwort", "score": null ODER modifizierte Partitur falls Noten geändert wurden}`;
-    const res = await callLLM(provider, model, key, SYSTEM_PREFIX, chatPrompt);
+    const chatPrompt = `${TECHNICAL_PROMPT}\n\nAKTUELLE PARTITUR (JSON):\n${JSON.stringify(lastScore)}\n\nNUTZER-ANWEISUNG / FRAGE:\n${msg}\n\nAntworte mit einem JSON-Objekt im Format: {"reply":"Deine Textantwort", "score": null ODER modifizierte Partitur falls Noten geändert wurden}`;
+    const res = await callLLM(provider, model, key, SYSTEM_PREFIX, chatPrompt, true);
     const envelope = extractJSON(res.text);
 
     appendChat("ai", envelope.reply || "Änderung umgesetzt.");
